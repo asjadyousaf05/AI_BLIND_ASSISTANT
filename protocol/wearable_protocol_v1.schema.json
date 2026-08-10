@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.ai-blind-assistant.invalid/protocol/wearable-v1.schema.json",
+  "title": "AI Blind Assistant Wearable Protocol v1 Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "type",
+    "messageId",
+    "timestamp",
+    "sequence",
+    "payload"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "const": 1
+    },
+    "type": {
+      "enum": [
+        "hello",
+        "authentication",
+        "heartbeat",
+        "device_status",
+        "pair_request",
+        "pair_result",
+        "revoke_credential",
+        "start_assistance",
+        "pause_assistance",
+        "resume_assistance",
+        "stop_assistance",
+        "change_mode",
+        "update_settings",
+        "request_current_settings",
+        "synchronize_settings",
+        "detection_event",
+        "priority_hazard_alert",
+        "camera_status",
+        "camera_error",
+        "model_status",
+        "model_error",
+        "device_health",
+        "acknowledgement",
+        "error",
+        "graceful_disconnect"
+      ]
+    },
+    "messageId": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "payload": {
+      "type": "object"
+    },
+    "authenticationTag": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Blind Assistant - Welcome</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#25c0f4",
+                        "background-light": "#f5f8f8",
+                        "background-dark": "#101e22",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display antialiased text-slate-900 dark:text-slate-100 overflow-hidden">
+<div class="relative flex h-screen w-full flex-col justify-between overflow-hidden">
+<!-- Header / Navigation Bar -->
+<div class="flex items-center p-6 justify-between">
+<div class="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+<span class="material-symbols-outlined text-3xl">menu</span>
+</div>
+<div class="flex-1 text-center pr-12">
+<span class="text-slate-400 dark:text-slate-500 font-medium tracking-wide uppercase text-xs">Accessibility Suite</span>
+</div>
+</div>
+<!-- Main Content Area -->
+<div class="flex flex-col items-center justify-center flex-1 px-8 space-y-8">
+<!-- Central Icon Visual -->
+<div class="w-32 h-32 rounded-full bg-primary/20 flex items-center justify-center border-4 border-primary">
+<span class="material-symbols-outlined text-6xl text-primary">visibility</span>
+</div>
+<div class="text-center space-y-4">
+<h1 class="text-slate-900 dark:text-slate-100 text-[42px] font-bold leading-tight tracking-tight">
+                    AI Blind Assistant
+                </h1>
+<p class="text-slate-600 dark:text-slate-400 text-xl font-medium max-w-xs mx-auto">
+                    Your eyes, everywhere.
+                </p>
+</div>
+</div>
+<!-- Background Graphic Elements (Subtle) -->
+<div class="absolute inset-0 -z-10 pointer-events-none overflow-hidden">
+<div class="absolute top-1/4 -right-20 w-80 h-80 bg-primary/5 rounded-full blur-[100px]"></div>
+<div class="absolute bottom-1/4 -left-20 w-80 h-80 bg-primary/5 rounded-full blur-[100px]"></div>
+</div>
+<!-- Bottom Actions -->
+<div class="p-8 space-y-6">
+<div class="flex flex-col gap-4 max-w-2xl mx-auto">
+<button class="flex w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl h-20 px-8 bg-primary text-background-dark text-2xl font-bold transition-all active:scale-95 shadow-lg shadow-primary/20">
+<span class="truncate">Continue</span>
+</button>
+<div class="flex justify-center items-center gap-2 py-4">
+<span class="material-symbols-outlined text-primary text-sm">settings_voice</span>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium tracking-wide">Voice Guidance Enabled</p>
+</div>
+</div>
+</div>
+</div>
+</body></html>

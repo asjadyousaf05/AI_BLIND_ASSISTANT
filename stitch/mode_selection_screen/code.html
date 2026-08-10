@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Blind Assistant - Mode Selection</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#25c0f4",
+                        "background-light": "#f5f8f8",
+                        "background-dark": "#101e22",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Lexend', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen flex flex-col overflow-hidden">
+<header class="flex items-center p-4 pt-6 justify-between shrink-0">
+<button aria-label="Go back" class="text-slate-900 dark:text-slate-100 flex items-center justify-center w-12 h-12 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+<span class="material-symbols-outlined text-3xl">arrow_back</span>
+</button>
+<h1 class="text-xl font-bold leading-tight tracking-tight flex-1 text-center pr-12">Select Mode</h1>
+</header>
+<main class="flex-1 flex flex-col px-4 pb-6 overflow-hidden">
+<div class="pt-2 pb-6 shrink-0">
+<h2 class="text-2xl font-bold tracking-tight">Choose your experience</h2>
+<p class="text-slate-600 dark:text-slate-400 mt-1">Pick a method for AI object detection.</p>
+</div>
+<div class="flex-1 flex flex-col gap-4 min-h-0">
+<!-- Mobile Mode Card - Selected State -->
+<div class="flex-1 flex flex-col rounded-xl overflow-hidden border-4 border-primary bg-slate-100 dark:bg-slate-800/50 shadow-xl">
+<div class="h-1/2 w-full bg-center bg-no-repeat bg-cover relative" data-alt="Person holding a smartphone to identify objects" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuC0Na8dGtPP40ACmXeKg9MxGgHDwGOPqj2BowCYyXnSvyZeIz4_gbtRXwFHGYA0TCjb3ezgHInGjfzhXklxTA8Exh8DfpFxGNDZE-xlyFPcVJnPPLvfwG3MC8pzRatZImrrKCr5bPxUHfReR9c-zJrxZOtF2kb3coUMtbAsmFgo32Q7U__Z8IKMP5TRUeikizdWmAk1z3SXVLAyUqLlEtxvzQl7aZp_Fh6cADBBj5OQ_krYhjWrcv6Y4KHOOG5wm73b03kzORzWMWU');">
+<div class="absolute top-3 right-3 bg-primary text-background-dark font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
+<span class="material-symbols-outlined text-lg">check_circle</span>
+<span>SELECTED</span>
+</div>
+</div>
+<div class="flex-1 p-5 flex flex-col justify-between">
+<div>
+<h3 class="text-xl font-bold text-primary mb-1">Mobile Mode</h3>
+<p class="text-slate-700 dark:text-slate-300 text-base leading-snug">Use your phone's camera for real-time object and text recognition in your hand.</p>
+</div>
+<div class="flex justify-end items-center">
+<span class="material-symbols-outlined text-primary text-4xl">smartphone</span>
+</div>
+</div>
+</div>
+<!-- Raspberry Cap Mode Card -->
+<div class="flex-1 flex flex-col rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800/30 border-4 border-transparent hover:border-slate-300 dark:hover:border-slate-700 transition-all cursor-pointer">
+<div class="h-1/2 w-full bg-center bg-no-repeat bg-cover grayscale opacity-80" data-alt="Close up of a smart wearable camera device" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDZ9j3ngKm5ewhwuCL_p_5mt_gEzqbkdlPa21rwwNQV-_vjBU8a5SBwGG3suy976S08fuWBEGAt2rMUrh-L51FBrPTfM5hHUR1b8V80V9iPgo9cciUMOlMddNcIGLPkZu1n_mMNShF3EBE1tigjkDJJ0sGxs1DIoZiAZmyUNmh24tEvzwhXKok01rWdrmL24PnbPeIMUiXhlWWhTJV5TKeMbyQfGQVpR1sLgHAsODCKc4lb047MbyAqbushAVFdW-S95zaYuKujHOQ');">
+</div>
+<div class="flex-1 p-5 flex flex-col justify-between">
+<div>
+<h3 class="text-xl font-bold text-slate-800 dark:text-slate-200 mb-1">Raspberry Cap Mode</h3>
+<p class="text-slate-600 dark:text-slate-400 text-base leading-snug">Hands-free assistance via wearable camera connected to your smart cap.</p>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm font-medium text-slate-500 uppercase tracking-widest">Connect Device</span>
+<span class="material-symbols-outlined text-slate-500 dark:text-slate-400 text-4xl">headset_mic</span>
+</div>
+</div>
+</div>
+</div>
+<footer class="mt-6 flex flex-col gap-3 shrink-0">
+<button class="w-full h-16 bg-primary text-background-dark rounded-xl text-xl font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+<span>Confirm Selection</span>
+<span class="material-symbols-outlined font-bold">arrow_forward</span>
+</button>
+<button class="w-full h-14 bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-xl text-lg font-bold active:scale-[0.98] transition-transform">
+                Back to Menu
+            </button>
+</footer>
+</main>
+</body></html>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#25c0f4",
+                        "background-light": "#f5f8f8",
+                        "background-dark": "#101e22",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Lexend', sans-serif;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 antialiased font-display h-screen overflow-hidden flex flex-col">
+<!-- Header -->
+<header class="flex items-center bg-background-light dark:bg-background-dark p-6 border-b border-primary/10">
+<button aria-label="Go back" class="text-primary flex items-center justify-center p-2 rounded-full hover:bg-primary/10 transition-colors">
+<span class="material-symbols-outlined text-4xl">arrow_back</span>
+</button>
+<h1 class="text-slate-900 dark:text-slate-100 text-3xl font-bold flex-1 text-center pr-12">About</h1>
+</header>
+<!-- Main Content (Non-scrolling flex container) -->
+<main class="flex-1 flex flex-col items-center justify-center px-6 py-4 gap-8 text-center">
+<!-- App Identity -->
+<div class="flex flex-col items-center gap-6">
+<div class="w-32 h-32 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20" data-alt="Abstract vibrant blue and white tech pattern logo" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDkoWj3c6SmkysUW_3_7VhhCsxp66oZRWzVOgMIZpmYkwyhfG3tanx4xg5dIpw0cPoZq8RXFRIXDwIOWpK39uRikh52ki4-rXXvj-U3_q2NJKMTtFT0YqK-mHEVPs93KlnrU5jGTq-EDZ-qd4K_8Std5eUjayXjv2KZDAufdIuj-e85LnEpk6gl3bAT7_b_sYCHwpmNi-J3OoUvniWxWMvf2An6o1ECWv4lFJ8Wrm6SKUqeHrlsLuC8ROg_8T3y4VjifddwC3hwPsM"); background-size: cover;'>
+<span class="material-symbols-outlined text-6xl text-background-dark">visibility</span>
+</div>
+<div class="flex flex-col gap-2">
+<h2 class="text-4xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Lumina AI</h2>
+<p class="text-xl font-medium text-primary">Version 2.4.0</p>
+</div>
+</div>
+<!-- Short Summary -->
+<div class="max-w-md">
+<p class="text-2xl leading-relaxed text-slate-700 dark:text-slate-300">
+                Empowering your vision through advanced real-time object recognition and spatial navigation.
+            </p>
+</div>
+<!-- Key Features/Notes Cards -->
+<div class="grid grid-cols-1 gap-4 w-full max-w-lg">
+<div class="bg-primary/10 border-2 border-primary/30 p-6 rounded-xl flex items-center gap-6 text-left">
+<span class="material-symbols-outlined text-4xl text-primary">cloud_off</span>
+<div>
+<h3 class="text-2xl font-bold text-slate-900 dark:text-slate-100">Offline Ready</h3>
+<p class="text-lg text-slate-600 dark:text-slate-400">Core vision AI works without internet.</p>
+</div>
+</div>
+<div class="bg-primary/10 border-2 border-primary/30 p-6 rounded-xl flex items-center gap-6 text-left">
+<span class="material-symbols-outlined text-4xl text-primary">accessibility_new</span>
+<div>
+<h3 class="text-2xl font-bold text-slate-900 dark:text-slate-100">Accessibility First</h3>
+<p class="text-lg text-slate-600 dark:text-slate-400">Optimized for screen readers &amp; haptics.</p>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="border-t border-primary/10 bg-background-light dark:bg-background-dark/50 backdrop-blur-md px-6 pb-8 pt-4">
+<div class="flex justify-around items-center max-w-md mx-auto">
+<a class="flex flex-col items-center gap-1 group" href="#">
+<div class="text-slate-400 group-hover:text-primary flex h-10 items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-3xl">home</span>
+</div>
+<p class="text-slate-400 group-hover:text-primary text-sm font-bold uppercase tracking-wider">Home</p>
+</a>
+<a class="flex flex-col items-center gap-1 group" href="#">
+<div class="text-slate-400 group-hover:text-primary flex h-10 items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-3xl">history</span>
+</div>
+<p class="text-slate-400 group-hover:text-primary text-sm font-bold uppercase tracking-wider">History</p>
+</a>
+<a class="flex flex-col items-center gap-1 text-primary" href="#">
+<div class="flex h-10 items-center justify-center">
+<span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1">info</span>
+</div>
+<p class="text-sm font-bold uppercase tracking-wider">About</p>
+</a>
+</div>
+</nav>
+</body></html>

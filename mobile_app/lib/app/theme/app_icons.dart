@@ -1,0 +1,41 @@
+import 'package:flutter/material.dart';
+
+abstract final class AppIcons {
+  static const accessibility = Icons.accessibility_new;
+  static const account = Icons.account_circle;
+  static const arrowBack = Icons.arrow_back;
+  static const arrowForward = Icons.arrow_forward;
+  static const bluetooth = Icons.bluetooth;
+  static const bluetoothSearching = Icons.bluetooth_searching;
+  static const camera = Icons.photo_camera_outlined;
+  static const capStatus = Icons.memory;
+  static const cloudOff = Icons.cloud_off;
+  static const connection = Icons.settings_input_antenna;
+  static const directionsWalk = Icons.directions_walk;
+  static const help = Icons.help_outline;
+  static const history = Icons.history;
+  static const home = Icons.home;
+  static const info = Icons.info;
+  static const link = Icons.link;
+  static const menu = Icons.menu;
+  static const mode = Icons.grid_view;
+  static const notifications = Icons.notifications_active;
+  static const personMode = Icons.headset_mic;
+  static const play = Icons.play_arrow;
+  static const playCircle = Icons.play_circle_fill;
+  static const refresh = Icons.refresh;
+  static const selected = Icons.check_circle;
+  static const sensors = Icons.sensors;
+  static const settings = Icons.settings;
+  static const settingsVoice = Icons.settings_voice;
+  static const smartphone = Icons.smartphone;
+  static const stop = Icons.stop;
+  static const stopCircle = Icons.stop_circle_outlined;
+  static const success = Icons.check_circle;
+  static const swap = Icons.swap_horiz;
+  static const vibration = Icons.vibration;
+  static const visibility = Icons.visibility_outlined;
+  static const volume = Icons.volume_up;
+  static const warning = Icons.warning_amber_rounded;
+  static const wifiOff = Icons.wifi_off;
+}
