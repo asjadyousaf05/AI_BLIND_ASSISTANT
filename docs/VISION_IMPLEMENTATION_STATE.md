@@ -29,7 +29,8 @@ Phase A (Audit + docs) and Phase B (Diagnostics) complete. Voice kernel V3 archi
 | I | Scanner Reader single-controller ownership audited. | (prior) |
 | J | Pause / Resume / Stop / Next / Previous / Repeat audited. | (prior) |
 | K | Slow / Normal / Fast profiles audited. | (prior) |
-| L | Scanner barge-in + TTS echo guard implemented. | pending |
+| L | Scanner barge-in + TTS echo guard implemented. | (prior) |
+| M | Push-to-Talk OS lifecycle isolation implemented. | pending |
 
 ## In-Progress Work
 
@@ -37,7 +38,6 @@ Phase A (Audit + docs) and Phase B (Diagnostics) complete. Voice kernel V3 archi
 
 ## Not Started
 
-- Phase M: Push-to-Talk OS lifecycle isolation
 - Phase N: Settings voice coverage
 - Phase O: Raspberry Pi / Wearable coverage
 - Phase P: Haptic feedback verification

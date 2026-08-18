@@ -212,6 +212,10 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
             setState(() => _holdActive = false);
             await controller.stopListeningAndSubmit();
           },
+          onHoldCancel: () async {
+            setState(() => _holdActive = false);
+            await controller.cancelListening();
+          },
           onTap: () async {
             if (sessionState == AssistantSessionState.listening) {
               setState(() => _holdActive = false);
@@ -291,6 +295,7 @@ class _PushToTalkButton extends StatelessWidget {
     required this.holdActive,
     required this.onHoldStart,
     required this.onHoldEnd,
+    required this.onHoldCancel,
     required this.onTap,
   });
 
@@ -298,6 +303,7 @@ class _PushToTalkButton extends StatelessWidget {
   final bool holdActive;
   final VoidCallback onHoldStart;
   final VoidCallback onHoldEnd;
+  final VoidCallback onHoldCancel;
   final VoidCallback onTap;
 
   @override
@@ -370,6 +376,9 @@ class _PushToTalkButton extends StatelessWidget {
           onLongPressStart: canStart ? (_) => onHoldStart() : null,
           onLongPressEnd: (canStart || isListening || holdActive)
               ? (_) => onHoldEnd()
+              : null,
+          onLongPressCancel: (canStart || isListening || holdActive)
+              ? onHoldCancel
               : null,
           onTap: (canStart || isListening || isSpeaking) ? onTap : null,
           child: AnimatedContainer(
