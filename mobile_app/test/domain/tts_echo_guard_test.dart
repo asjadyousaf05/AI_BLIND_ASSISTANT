@@ -81,5 +81,27 @@ void main() {
 
       expect(guard.activeWordText, isEmpty);
     });
+
+    test('isWakeWordEcho detects the word vision in the active sentence', () {
+      guard.onTtsStart(
+        utteranceId: 'utt_3',
+        sentenceId: 's3',
+        sentenceText: 'Computer vision is a field of artificial intelligence.',
+        generation: 3,
+      );
+
+      // It should be detected even before specific words are highlighted
+      // because the sentence contains "vision".
+      expect(guard.isWakeWordEcho(), isTrue);
+
+      guard.onTtsStart(
+        utteranceId: 'utt_4',
+        sentenceId: 's4',
+        sentenceText: 'This is a normal sentence.',
+        generation: 4,
+      );
+
+      expect(guard.isWakeWordEcho(), isFalse);
+    });
   });
 }

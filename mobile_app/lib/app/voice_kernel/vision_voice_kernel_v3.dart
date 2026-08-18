@@ -378,6 +378,11 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
   int _retryAttempts = 0;
 
   Future<void> _handleWake() async {
+    if (_ttsEchoGuard.isWakeWordEcho()) {
+      VoiceDiagnosticLogger.info('Discarding wake event due to TTS echo');
+      return;
+    }
+    
     VoiceDiagnosticLogger.wakeDetected();
     final nextCmdSession = state.commandSessionId + 1;
     _retryAttempts = 0;
@@ -432,10 +437,16 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
 
     VoiceDiagnosticLogger.asrEvent(event);
 
+    if (_ttsEchoGuard.isSelfEcho(transcript)) {
+      VoiceDiagnosticLogger.info('Discarding transcript due to TTS echo: $transcript');
+      return;
+    }
+
     // 1. Resolve intent
     var command = _resolver.resolve(
       transcript,
       context: state.activeContext,
+      isBargeIn: _ttsEchoGuard.isSpeaking,
     );
     
     // Intercept confirmation logic

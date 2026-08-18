@@ -129,4 +129,42 @@ class TtsEchoGuard {
 
     return false;
   }
+
+  /// Determines whether an active TTS sentence is likely to trigger a false wake event.
+  /// 
+  /// Checks if the TTS is currently speaking and if the active sentence contains
+  /// the word "vision".
+  bool isWakeWordEcho({
+    Duration echoWindow = const Duration(milliseconds: 750),
+  }) {
+    if (!_isSpeaking) return false;
+
+    // Check localized neighborhood around the playback head
+    if (_activeSentenceText.isNotEmpty) {
+      final sentLower = _activeSentenceText.toLowerCase();
+      final windowStart = math.max(0, _activeRangeStart - 20);
+      final windowEnd = math.min(sentLower.length, _activeRangeEnd + 25);
+      final neighborhood = sentLower.substring(windowStart, windowEnd);
+
+      if (neighborhood.contains('vision')) {
+        return true;
+      }
+    }
+
+    // Check entire sentence if recently updated
+    final wordsInSentence = _activeSentenceText
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((w) => w.isNotEmpty);
+    if (wordsInSentence.contains('vision')) {
+      final elapsed = DateTime.now().difference(
+        _lastRangeTimestamp ?? DateTime.now(),
+      );
+      if (elapsed <= echoWindow) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 }
