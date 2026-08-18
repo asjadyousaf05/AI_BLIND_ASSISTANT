@@ -456,6 +456,36 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       isBargeIn: _ttsEchoGuard.isSpeaking,
     );
     
+    // If we're in a focused feature context (mobile detection or reader), be conservative:
+    // accept only contextual commands and a small set of navigation/silence intents
+    bool _isAllowedInCurrentContext(VoiceCommand cmd) {
+      final intent = cmd.intent;
+      final ctx = state.activeContext;
+
+      // Always allow navigation back and dismiss intents
+      if (intent is NavigateBack || intent is DismissAssistant || intent is Silence) return true;
+
+      if (ctx == VoiceFeatureContext.mobileDetection) {
+        return intent is StopMobileDetection || intent is PauseMobileDetection || intent is ResumeMobileDetection || intent is ReadRecentDetections;
+      }
+      if (ctx == VoiceFeatureContext.scannerReading) {
+        return intent is Silence || intent is ReadingPause || intent is ReadingResume || intent is ReadingNext || intent is ReadingPrevious || intent is ReadingRepeat || intent is ReadingRestart || intent is CopyScannedText || intent is RescanDocument;
+      }
+
+      return true; // default allow in other contexts
+    }
+
+    // If the resolver returned a command that is not allowed in the current focused context,
+    // treat it as unrecognized but avoid noisy feedback — silently resume wake listening.
+    if (!_isAllowedInCurrentContext(command)) {
+      VoiceDiagnosticLogger.info('Ignored out-of-context command in ${state.activeContext.label}: ${command.intent.runtimeType}');
+      if (state.isHandsFreeActive) {
+        unawaited(_speechRecognizer.resumeHandsFree(acceptNextCommand: false));
+        _transitionTo(VoiceRuntimeState.wakeListening);
+      }
+      return;
+    }
+
     // Intercept confirmation logic
     if (state.pendingConfirmationCommand != null) {
       if (command.intent is ConfirmYes) {
@@ -495,9 +525,18 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
           lastRejectionReason: reason,
           statusMessage: 'Please repeat.',
         );
-        await speakFeedback('Please repeat.');
-        if (state.isHandsFreeActive) {
-          await _speechRecognizer.resumeHandsFree(acceptNextCommand: true);
+        // In focused feature contexts (mobileDetection / scannerReading) avoid noisy retry TTS;
+        // silently resume listening once instead of speaking "Please repeat." which can echo.
+        if (state.activeContext == VoiceFeatureContext.mobileDetection ||
+            state.activeContext == VoiceFeatureContext.scannerReading) {
+          if (state.isHandsFreeActive) {
+            await _speechRecognizer.resumeHandsFree(acceptNextCommand: true);
+          }
+        } else {
+          await speakFeedback('Please repeat.');
+          if (state.isHandsFreeActive) {
+            await _speechRecognizer.resumeHandsFree(acceptNextCommand: true);
+          }
         }
         return;
       }
