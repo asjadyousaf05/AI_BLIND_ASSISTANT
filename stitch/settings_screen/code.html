@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#25c0f4",
+                        "background-light": "#f5f8f8",
+                        "background-dark": "#101e22",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Lexend', sans-serif;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen flex flex-col overflow-hidden">
+<header class="flex items-center justify-between p-6">
+<button class="flex items-center justify-center size-12 rounded-full bg-slate-200 dark:bg-slate-800 hover:bg-primary/20 transition-colors">
+<span class="material-symbols-outlined text-slate-900 dark:text-slate-100">arrow_back</span>
+</button>
+<h1 class="text-2xl font-bold tracking-tight">Settings</h1>
+<div class="size-12"></div>
+</header>
+<main class="flex-1 flex flex-col px-6 gap-8 justify-center">
+<section class="space-y-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">volume_up</span>
+<h2 class="text-xl font-semibold">Feedback Mode</h2>
+</div>
+<div class="flex p-1.5 bg-slate-200 dark:bg-slate-800 rounded-xl h-16">
+<label class="flex-1 cursor-pointer group">
+<input class="peer hidden" name="feedback" type="radio" value="audio"/>
+<div class="h-full w-full flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 peer-checked:bg-background-light dark:peer-checked:bg-background-dark peer-checked:text-primary peer-checked:shadow-sm transition-all font-medium">
+                        Audio
+                    </div>
+</label>
+<label class="flex-1 cursor-pointer group">
+<input class="peer hidden" name="feedback" type="radio" value="vibration"/>
+<div class="h-full w-full flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 peer-checked:bg-background-light dark:peer-checked:bg-background-dark peer-checked:text-primary peer-checked:shadow-sm transition-all font-medium">
+                        Vibration
+                    </div>
+</label>
+<label class="flex-1 cursor-pointer group">
+<input checked="" class="peer hidden" name="feedback" type="radio" value="both"/>
+<div class="h-full w-full flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 peer-checked:bg-background-light dark:peer-checked:bg-background-dark peer-checked:text-primary peer-checked:shadow-sm transition-all font-medium">
+                        Both
+                    </div>
+</label>
+</div>
+</section>
+<section class="space-y-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">sensors</span>
+<h2 class="text-xl font-semibold">Detection Sensitivity</h2>
+</div>
+<div class="grid grid-cols-3 gap-4">
+<label class="cursor-pointer">
+<input class="peer hidden" name="sensitivity" type="radio" value="low"/>
+<div class="flex flex-col items-center justify-center h-28 rounded-xl border-2 border-slate-200 dark:border-slate-800 peer-checked:border-primary peer-checked:bg-primary/10 transition-all">
+<span class="material-symbols-outlined mb-2 opacity-50 peer-checked:opacity-100">signal_cellular_1_bar</span>
+<span class="font-medium">Low</span>
+</div>
+</label>
+<label class="cursor-pointer">
+<input checked="" class="peer hidden" name="sensitivity" type="radio" value="medium"/>
+<div class="flex flex-col items-center justify-center h-28 rounded-xl border-2 border-slate-200 dark:border-slate-800 peer-checked:border-primary peer-checked:bg-primary/10 transition-all">
+<span class="material-symbols-outlined mb-2 opacity-50 peer-checked:opacity-100">signal_cellular_3_bar</span>
+<span class="font-medium">Medium</span>
+</div>
+</label>
+<label class="cursor-pointer">
+<input class="peer hidden" name="sensitivity" type="radio" value="high"/>
+<div class="flex flex-col items-center justify-center h-28 rounded-xl border-2 border-slate-200 dark:border-slate-800 peer-checked:border-primary peer-checked:bg-primary/10 transition-all">
+<span class="material-symbols-outlined mb-2 opacity-50 peer-checked:opacity-100">signal_cellular_4_bar</span>
+<span class="font-medium">High</span>
+</div>
+</label>
+</div>
+</section>
+</main>
+<footer class="p-6 pb-10 grid grid-cols-2 gap-4">
+<button class="flex items-center justify-center h-16 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold text-lg active:scale-95 transition-transform">
+            Cancel
+        </button>
+<button class="flex items-center justify-center h-16 rounded-xl bg-primary text-background-dark font-bold text-lg active:scale-95 transition-transform shadow-lg shadow-primary/20">
+            Save Changes
+        </button>
+</footer>
+</body></html>

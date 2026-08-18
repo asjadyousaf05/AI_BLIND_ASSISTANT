@@ -1,0 +1,49 @@
+[Unit]
+Description=AI Blind Assistant Raspberry Pi wearable service
+Documentation=file:///opt/ai-blind-assistant/service/README.md
+Wants=network-online.target
+After=network-online.target sound.target
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=simple
+User=aiba
+Group=aiba
+SupplementaryGroups=video audio
+WorkingDirectory=/opt/ai-blind-assistant/service
+EnvironmentFile=/etc/ai-blind-assistant/wearable.env
+ExecStart=/opt/ai-blind-assistant/venv/bin/ai-blind-pi serve
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=45
+TimeoutStopSec=15
+KillSignal=SIGTERM
+UMask=0077
+
+# Service hardening. Camera device access requires the supplementary groups,
+# therefore PrivateDevices is intentionally not enabled.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ai-blind-assistant /var/log/ai-blind-assistant
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+LimitNOFILE=256
+MemoryMax=850M
+
+[Install]
+WantedBy=multi-user.target

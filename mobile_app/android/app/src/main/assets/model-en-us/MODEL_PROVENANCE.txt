@@ -1,0 +1,7 @@
+Model: vosk-model-small-en-us-0.15
+Publisher: Alpha Cephei Inc.
+Source: https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+Downloaded: 2026-08-14
+Archive SHA-256: 30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498
+Declared license: Apache License 2.0
+Purpose: Bundled offline English speech recognition for explicit app controls.

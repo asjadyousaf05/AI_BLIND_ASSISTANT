@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#25c0f4",
+                        "background-light": "#f5f8f8",
+                        "background-dark": "#101e22",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Lexend', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen flex flex-col font-display overflow-hidden">
+<!-- Top Navigation Bar -->
+<header class="flex items-center px-4 pt-6 pb-2 justify-between">
+<button class="flex items-center justify-center size-12 rounded-full hover:bg-primary/10 transition-colors">
+<span class="material-symbols-outlined text-3xl">arrow_back</span>
+</button>
+<h2 class="text-xl font-bold tracking-tight text-center flex-1 pr-12">User Guide</h2>
+</header>
+<!-- Main Content Area (No Scroll Container) -->
+<main class="flex-1 flex flex-col items-center justify-between px-6 py-4">
+<div class="text-center mb-6">
+<h1 class="text-4xl font-bold tracking-tight text-slate-900 dark:text-white">Quick Start</h1>
+<p class="text-slate-500 dark:text-primary/70 text-lg mt-2 font-medium">Follow these 3 simple steps</p>
+</div>
+<!-- Horizontal Step Container -->
+<div class="flex flex-row gap-4 w-full overflow-x-auto no-scrollbar snap-x snap-mandatory">
+<!-- Step 1: Start/Stop -->
+<div class="min-w-full snap-center bg-slate-100 dark:bg-slate-800/40 border-2 border-primary/20 p-6 rounded-xl flex flex-col items-center text-center gap-6">
+<div class="w-full h-48 bg-primary/10 rounded-lg flex items-center justify-center overflow-hidden">
+<span class="material-symbols-outlined text-primary text-[100px]" style="font-variation-settings: 'FILL' 1">play_circle</span>
+</div>
+<div class="space-y-3">
+<h3 class="text-2xl font-bold text-slate-900 dark:text-white">1. Start &amp; Stop</h3>
+<p class="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">Tap the central action button to begin or pause your current activity session.</p>
+</div>
+</div>
+<!-- Step 2: Switch Modes -->
+<div class="min-w-full snap-center bg-slate-100 dark:bg-slate-800/40 border-2 border-primary/20 p-6 rounded-xl flex flex-col items-center text-center gap-6">
+<div class="w-full h-48 bg-primary/10 rounded-lg flex items-center justify-center overflow-hidden">
+<span class="material-symbols-outlined text-primary text-[100px]" style="font-variation-settings: 'FILL' 1">swap_horiz</span>
+</div>
+<div class="space-y-3">
+<h3 class="text-2xl font-bold text-slate-900 dark:text-white">2. Switch Modes</h3>
+<p class="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">Use the icons in the bottom toolbar to toggle between different tracking modes.</p>
+</div>
+</div>
+<!-- Step 3: Alerts -->
+<div class="min-w-full snap-center bg-slate-100 dark:bg-slate-800/40 border-2 border-primary/20 p-6 rounded-xl flex flex-col items-center text-center gap-6">
+<div class="w-full h-48 bg-primary/10 rounded-lg flex items-center justify-center overflow-hidden">
+<span class="material-symbols-outlined text-primary text-[100px]" style="font-variation-settings: 'FILL' 1">notifications_active</span>
+</div>
+<div class="space-y-3">
+<h3 class="text-2xl font-bold text-slate-900 dark:text-white">3. Stay Alert</h3>
+<p class="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">Look for the colored banner and listen for the chime when notifications arrive.</p>
+</div>
+</div>
+</div>
+<!-- Pagination Indicators -->
+<div class="flex flex-row items-center justify-center gap-3 py-6">
+<div class="h-3 w-3 rounded-full bg-primary"></div>
+<div class="h-3 w-3 rounded-full bg-slate-300 dark:bg-slate-700"></div>
+<div class="h-3 w-3 rounded-full bg-slate-300 dark:bg-slate-700"></div>
+</div>
+</main>
+<!-- Fixed Footer Action -->
+<footer class="p-6 pt-0">
+<button class="w-full h-16 bg-primary hover:bg-primary/90 text-background-dark text-xl font-bold rounded-xl transition-all shadow-lg active:scale-[0.98]">
+            Got It
+        </button>
+</footer>
+</body></html>

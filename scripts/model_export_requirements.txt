@@ -1,0 +1,6 @@
+# Pinned, export-time-only dependencies. Install in a disposable virtual
+# environment; these packages are not Android runtime dependencies.
+ultralytics==8.4.106
+litert-torch==0.9.3
+ai-edge-litert==2.1.6
+numpy==2.5.1

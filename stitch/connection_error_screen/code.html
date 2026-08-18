@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Connection Failed</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#25c0f4",
+              "background-light": "#f5f8f8",
+              "background-dark": "#101e22",
+            },
+            fontFamily: {
+              "display": ["Lexend"]
+            },
+            borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            font-family: 'Lexend', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+<div class="relative flex h-screen w-full flex-col justify-between overflow-hidden">
+<!-- Top App Bar -->
+<header class="flex items-center p-4">
+<div class="flex size-12 shrink-0 items-center justify-center rounded-full bg-slate-200/50 dark:bg-slate-800/50 cursor-pointer">
+<span class="material-symbols-outlined text-slate-900 dark:text-slate-100" data-icon="arrow_back">arrow_back</span>
+</div>
+<h2 class="text-lg font-bold leading-tight tracking-tight flex-1 text-center pr-12">Connection Status</h2>
+</header>
+<!-- Main Content Area -->
+<main class="flex flex-col items-center justify-center flex-1 px-6 text-center">
+<div class="flex flex-col items-center max-w-md w-full gap-8">
+<!-- Error Illustration / Icon -->
+<div class="relative flex items-center justify-center">
+<div class="absolute inset-0 bg-primary/20 blur-3xl rounded-full"></div>
+<div class="relative size-32 md:size-40 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-800 border-4 border-slate-300 dark:border-slate-700">
+<span class="material-symbols-outlined text-primary text-6xl md:text-7xl" data-icon="wifi_off">wifi_off</span>
+</div>
+</div>
+<!-- Text Content -->
+<div class="flex flex-col gap-3">
+<h1 class="text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">Connection Failed</h1>
+<p class="text-base md:text-lg font-normal text-slate-600 dark:text-slate-400 leading-relaxed">
+                        Don't worry, it's just a temporary hiccup. Please check your internet connection or try switching to mobile mode for a faster experience.
+                    </p>
+</div>
+</div>
+</main>
+<!-- Action Buttons -->
+<footer class="p-6 md:p-8">
+<div class="flex flex-col gap-4 max-w-md mx-auto">
+<button class="flex h-14 w-full cursor-pointer items-center justify-center rounded-xl bg-primary px-6 text-background-dark text-lg font-bold shadow-lg shadow-primary/20 transition-transform active:scale-95">
+<span class="material-symbols-outlined mr-2" data-icon="refresh">refresh</span>
+<span class="truncate uppercase tracking-wider">Retry Connection</span>
+</button>
+<button class="flex h-14 w-full cursor-pointer items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-800 px-6 text-slate-900 dark:text-white text-lg font-bold border border-slate-300 dark:border-slate-700 transition-transform active:scale-95">
+<span class="material-symbols-outlined mr-2" data-icon="cell_tower">cell_tower</span>
+<span class="truncate">Switch to Mobile Mode</span>
+</button>
+</div>
+<div class="mt-6 text-center">
+<p class="text-xs font-medium text-slate-500 dark:text-slate-500 uppercase tracking-widest">Error Code: ERR_NETWORK_TIMED_OUT</p>
+</div>
+</footer>
+</div>
+</body></html>

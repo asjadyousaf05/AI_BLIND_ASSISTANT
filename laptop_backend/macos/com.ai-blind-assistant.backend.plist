@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-blind-assistant.backend</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/mm/AI_BLIND_ASSISTANT/laptop_backend/.venv/bin/python</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>src.ai_assistant.main:app</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8765</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/mm/AI_BLIND_ASSISTANT/laptop_backend</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Do not persist pairing codes or request data in a log file. -->
+    <key>StandardOutPath</key>
+    <string>/dev/null</string>
+    <key>StandardErrorPath</key>
+    <string>/dev/null</string>
+</dict>
+</plist>

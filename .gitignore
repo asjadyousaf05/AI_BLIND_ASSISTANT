@@ -1,0 +1,38 @@
+# Local Python model-export environments and caches.
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Local assistant state and environment overrides. These can
+# contain conversation data, bearer-token hashes, or machine-specific values.
+/data/
+/laptop_backend/data/
+/laptop_backend/.env
+
+# Raspberry Pi service environments, mutable state, logs, and externally
+# supplied NCNN binaries. Installation copies verified model artifacts from a
+# user-selected source; these runtime files are not generated in the repo.
+/raspberry_pi/.venv*/
+/raspberry_pi/var/
+/raspberry_pi/logs/
+/raspberry_pi/models/**/*.bin
+/raspberry_pi/models/**/*.param
+
+# Reproducible Ultralytics download/export intermediates. The installed model
+# under mobile_app/assets/models/ is intentionally not ignored.
+*.download
+/yolov8n*.pt
+/yolov8n*.onnx
+/yolov8n*_saved_model/
+/yolov8n*_torchscript/
+
+# Local IDE and operating-system metadata.
+.DS_Store
+.idea/
+deliverables/*.apk

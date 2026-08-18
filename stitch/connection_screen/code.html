@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#25c0f4",
+                        "background-light": "#f5f8f8",
+                        "background-dark": "#101e22",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<title>Raspberry Cap - Connection</title>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 min-h-screen flex flex-col overflow-hidden">
+<header class="flex items-center justify-between px-6 pt-8 pb-4">
+<button class="w-10 h-10 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h2 class="text-xl font-bold tracking-tight">Raspberry Cap</h2>
+<button class="w-10 h-10 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+<span class="material-symbols-outlined">help</span>
+</button>
+</header>
+<main class="flex-1 flex flex-col px-6 justify-between py-4">
+<div class="flex flex-col items-center text-center space-y-4 py-6">
+<div class="relative">
+<div class="w-48 h-48 rounded-full bg-primary/10 border-4 border-primary/20 flex items-center justify-center">
+<div class="w-32 h-32 rounded-full bg-primary/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-6xl">bluetooth_searching</span>
+</div>
+</div>
+<div class="absolute -top-2 -right-2 bg-primary text-background-dark font-bold px-3 py-1 rounded-full text-xs uppercase tracking-widest">Searching</div>
+</div>
+<div class="space-y-2">
+<h1 class="text-3xl font-extrabold text-slate-900 dark:text-slate-50">Ready to Connect</h1>
+<p class="text-slate-600 dark:text-slate-400 max-w-xs mx-auto text-base">Keep your Raspberry Cap within 3 feet and ensure it's powered on.</p>
+</div>
+</div>
+<div class="flex-1 flex flex-col justify-center py-4">
+<div class="bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-5 shadow-xl">
+<div class="flex items-center justify-between gap-4">
+<div class="flex items-center gap-4">
+<div class="w-16 h-16 rounded-lg bg-primary/20 flex items-center justify-center overflow-hidden">
+<div class="w-full h-full bg-center bg-cover" data-alt="Abstract tech icon representing a peripheral device" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBecs0o0nrx6DkkJ8o6FRPO7-XXIB0SOzUaH9tBS2aN334pXZjAupwIeJ0ZIMEcVcldDVXB4tfNlhX7OTrpugDTseLnNn40nfOUWpSNLmkfCeD7xhFUmJ2KQ_cSFFZg9U0xQIVACzRwyRP82eOkxAgEE9VMEj3v2q-hJYvcm8r053sx6YtRBqGjJHOXlUvuECnG2xsC28LzvmPuY4YKUXFhtNSltWqiV0NWTCPbtTU_PBBYDqU7IynbwdTzu5syCcbiOoZMu_WggdU');"></div>
+</div>
+<div>
+<p class="text-lg font-bold text-slate-900 dark:text-slate-100">Raspberry Cap v1</p>
+<p class="text-primary font-medium text-sm">RC-8829 • 100% Signal</p>
+</div>
+</div>
+<div class="flex items-center justify-center h-8 w-8 rounded-full bg-emerald-500/20 text-emerald-500">
+<span class="material-symbols-outlined text-xl">check_circle</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-4 pb-8">
+<button class="w-full bg-primary hover:bg-primary/90 text-background-dark font-extrabold py-5 rounded-xl text-xl flex items-center justify-center gap-3 transition-colors shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined font-bold">link</span>
+                CONNECT NOW
+            </button>
+<button class="w-full bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold py-4 rounded-xl text-lg flex items-center justify-center gap-2 border-2 border-transparent hover:border-primary/50 transition-all">
+<span class="material-symbols-outlined">refresh</span>
+                SCAN AGAIN
+            </button>
+</div>
+</main>
+<nav class="bg-slate-100 dark:bg-background-dark border-t border-slate-200 dark:border-slate-800 px-6 py-4 flex justify-between items-center">
+<a class="flex flex-col items-center text-slate-500 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined">home</span>
+</a>
+<a class="flex flex-col items-center text-primary" href="#">
+<span class="material-symbols-outlined !fill-1">bluetooth</span>
+</a>
+<a class="flex flex-col items-center text-slate-500 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined">settings</span>
+</a>
+</nav>
+</body></html>
