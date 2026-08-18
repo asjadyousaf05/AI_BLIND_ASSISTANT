@@ -95,6 +95,16 @@ class MainActivity : FlutterActivity() {
         wearablePlatformHandler = WearablePlatformHandler(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ai_blind_assistant/wearable")
             .setMethodCallHandler(wearablePlatformHandler)
+
+        // Optional Porcupine wake-word bridge. Safe no-op until Porcupine
+        // native libraries are integrated. Uses the same on-device recognizer
+        // channel so wake events flow into the existing hands-free pipeline.
+        val porcupineChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ai_blind_assistant/porcupine")
+        val porcupineHandler = PorcupineWakeHandler(applicationContext, porcupineChannel)
+
+        // Keep a reference so it can be disposed in onDestroy.
+        // Note: porcupineHandler is intentionally left reachable by a field
+        // if later lifecycle management is required.
     }
 
     override fun onDestroy() {
