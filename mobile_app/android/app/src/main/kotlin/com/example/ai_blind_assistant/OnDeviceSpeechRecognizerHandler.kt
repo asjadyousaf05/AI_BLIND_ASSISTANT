@@ -461,22 +461,24 @@ class OnDeviceSpeechRecognizerHandler(
         val model = voskModel ?: return
         if (sessionMode == SessionMode.HANDS_FREE && activeProvider == RecognitionProvider.VOSK && voskSpeechService != null) {
             mainHandler.post {
-                val newRecognizer = Recognizer(model, VOSK_SAMPLE_RATE)
-                newRecognizer.setMaxAlternatives(VisionAiVoskContract.maxAlternatives)
-                newRecognizer.setWords(false)
-                newRecognizer.setPartialWords(false)
-                voskRecognizer = newRecognizer
-                val service = voskSpeechService
-                if (service != null) {
-                    val recField = service.javaClass.getDeclaredField("recognizer")
-                    recField.isAccessible = true
-                    recField.set(service, newRecognizer)
+                try {
+                    val newRecognizer = Recognizer(model, VOSK_SAMPLE_RATE)
+                    newRecognizer.setMaxAlternatives(VisionAiVoskContract.maxAlternatives)
+                    newRecognizer.setWords(false)
+                    newRecognizer.setPartialWords(false)
+                    voskRecognizer = newRecognizer
+                    val service = voskSpeechService
+                    if (service != null) {
+                        val recField = service.javaClass.getDeclaredField("recognizer")
+                        recField.isAccessible = true
+                        recField.set(service, newRecognizer)
+                    }
+                    lastHandledHandsFreeTranscript = null
+                    voskPartialTranscript = ""
+                    voskRecognizer?.reset()
+                } catch (e: Exception) {
+                    android.util.Log.w("VisionAudio", "Could not hot-swap recognizer grammar: $e")
                 }
-                lastHandledHandsFreeTranscript = null
-                voskPartialTranscript = ""
-                voskRecognizer?.reset()
-            } catch (e: Exception) {
-                android.util.Log.w("VisionAudio", "Could not hot-swap recognizer grammar: $e")
             }
         }
     }
@@ -856,6 +858,10 @@ class OnDeviceSpeechRecognizerHandler(
     }
 
 
+    private fun isDirectInterruption(normalized: String): Boolean {
+        val directSet = setOf("stop", "cancel", "pause", "resume", "go back", "back", "no", "quit")
+        return directSet.any { normalized.contains(it) }
+    }
 
     private fun handleHandsFreeTranscript(rawTranscript: String) {
         val transcript = rawTranscript.trim()
@@ -1066,4 +1072,5 @@ class OnDeviceSpeechRecognizerHandler(
         const val VOSK_ASSET_PATH = "model-en-us"
         const val VOSK_STORAGE_PATH = "offline-speech"
         val WHITESPACE_REGEX = Regex("\\s+")
+    }
 }
