@@ -13,6 +13,8 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -41,6 +43,9 @@ class OnDeviceSpeechRecognizerHandler(
     private var voskSpeechService: VoskSpeechService? = null
     private var activeProvider: RecognitionProvider? = null
     private var sessionMode: SessionMode? = null
+
+    // Protects concurrent access/modification of Vosk objects from audio and UI threads
+    private val voskLock = ReentrantLock()
 
     private var pendingStartResult: MethodChannel.Result? = null
     private var pendingSessionMode: SessionMode? = null
@@ -444,12 +449,15 @@ class OnDeviceSpeechRecognizerHandler(
             }
             // Discard any buffered wake phrase or TTS echo before accepting
             // the next user utterance.
-            try {
-                voskRecognizer?.reset()
-            } catch (_: Exception) {}
-            try {
-                voskSpeechService?.setPause(false)
-            } catch (_: Exception) {}
+            // Ensure we don't mutate the recognizer while the audio thread may be using it
+            voskLock.withLock {
+                try {
+                    voskRecognizer?.reset()
+                } catch (_: Exception) {}
+                try {
+                    voskSpeechService?.setPause(false)
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -466,16 +474,20 @@ class OnDeviceSpeechRecognizerHandler(
                     newRecognizer.setMaxAlternatives(VisionAiVoskContract.maxAlternatives)
                     newRecognizer.setWords(false)
                     newRecognizer.setPartialWords(false)
-                    voskRecognizer = newRecognizer
-                    val service = voskSpeechService
-                    if (service != null) {
-                        val recField = service.javaClass.getDeclaredField("recognizer")
-                        recField.isAccessible = true
-                        recField.set(service, newRecognizer)
+                    voskLock.withLock {
+                        voskRecognizer = newRecognizer
+                        val service = voskSpeechService
+                        if (service != null) {
+                            val recField = service.javaClass.getDeclaredField("recognizer")
+                            recField.isAccessible = true
+                            recField.set(service, newRecognizer)
+                        }
+                        lastHandledHandsFreeTranscript = null
+                        voskPartialTranscript = ""
+                        try {
+                            voskRecognizer?.reset()
+                        } catch (_: Exception) {}
                     }
-                    lastHandledHandsFreeTranscript = null
-                    voskPartialTranscript = ""
-                    voskRecognizer?.reset()
                 } catch (e: Exception) {
                     android.util.Log.w("VisionAudio", "Could not hot-swap recognizer grammar: $e")
                 }
@@ -709,28 +721,31 @@ class OnDeviceSpeechRecognizerHandler(
     }
 
     private fun destroyVoskSession(cancel: Boolean) {
-        val service = voskSpeechService
-        if (service != null) {
-            if (cancel) {
+        // Ensure the audio thread is not concurrently mutating the recognizer
+        voskLock.withLock {
+            val service = voskSpeechService
+            if (service != null) {
+                if (cancel) {
+                    try {
+                        service.cancel()
+                    } catch (_: Exception) {
+                        // Shutdown still runs.
+                    }
+                }
                 try {
-                    service.cancel()
+                    service.shutdown()
                 } catch (_: Exception) {
-                    // Shutdown still runs.
+                    // AudioRecord is already released.
                 }
             }
+            voskSpeechService = null
             try {
-                service.shutdown()
+                voskRecognizer?.close()
             } catch (_: Exception) {
-                // AudioRecord is already released.
+                // Recognizer is already being released.
             }
+            voskRecognizer = null
         }
-        voskSpeechService = null
-        try {
-            voskRecognizer?.close()
-        } catch (_: Exception) {
-            // Recognizer is already being released.
-        }
-        voskRecognizer = null
     }
 
     private fun cancelStopTimeout() {
