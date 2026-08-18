@@ -459,40 +459,56 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
         switch (next) {
           case OcrActionTrigger.capture:
             unawaited(_captureAndRecognise());
+            break;
           case OcrActionTrigger.reset:
             unawaited(_rescan());
+            break;
           case OcrActionTrigger.stopSpeaking:
             unawaited(_stopSpeaking());
+            break;
           case OcrActionTrigger.readAgain:
             if (_recognisedText != null && _recognisedText!.isNotEmpty) {
               unawaited(_speakResult(_recognisedText!));
             }
+            break;
           case OcrActionTrigger.pause:
             unawaited(_textPlayer?.pause());
+            break;
           case OcrActionTrigger.resume:
             unawaited(_textPlayer?.resume());
+            break;
           case OcrActionTrigger.previous:
             unawaited(_textPlayer?.previous());
+            break;
           case OcrActionTrigger.next:
             unawaited(_textPlayer?.next());
+            break;
           case OcrActionTrigger.repeat:
             unawaited(_textPlayer?.repeat());
+            break;
           case OcrActionTrigger.restart:
             unawaited(_textPlayer?.restart());
+            break;
           case OcrActionTrigger.spell:
             unawaited(_textPlayer?.spellCurrent());
+            break;
           case OcrActionTrigger.setLearningMode:
             unawaited(_textPlayer?.setProfile(ReadingProfile.learning));
+            break;
           case OcrActionTrigger.setNormalMode:
             unawaited(_textPlayer?.setProfile(ReadingProfile.normal));
+            break;
           case OcrActionTrigger.setSkimMode:
             unawaited(_textPlayer?.setProfile(ReadingProfile.skim));
+            break;
           case OcrActionTrigger.switchCamera:
             unawaited(_switchCamera());
+            break;
           case OcrActionTrigger.copyText:
             if (_recognisedText != null && _recognisedText!.isNotEmpty) {
               unawaited(_copyTextToClipboard(_recognisedText!));
             }
+            break;
         }
       });
     });
