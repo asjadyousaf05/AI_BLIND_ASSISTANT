@@ -218,7 +218,7 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       // vocabularies for wake+command recognition on devices that support it.
       try {
         await _speechRecognizer.setRecognitionProfile('hands_free');
-      } catch (_: Exception) {}
+      } catch (_) {}
 
       await _speechRecognizer.startHandsFree(locale: 'en-US');
       _transitionTo(VoiceRuntimeState.wakeListening);
