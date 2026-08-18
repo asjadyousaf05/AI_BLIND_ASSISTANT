@@ -362,6 +362,12 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       _handleNativeEvent,
       onError: (e) {
         VoiceDiagnosticLogger.error('HandsFree stream error', e);
+        // Attempt to recover the recognizer when the native hands-free stream errors.
+        unawaited(_recoverRecognizer());
+      },
+      onDone: () {
+        VoiceDiagnosticLogger.info('HandsFree stream completed unexpectedly — recovering recognizer');
+        unawaited(_recoverRecognizer());
       },
     );
   }
