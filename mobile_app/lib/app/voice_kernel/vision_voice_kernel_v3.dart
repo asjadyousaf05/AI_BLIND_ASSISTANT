@@ -9,6 +9,7 @@ import '../../domain/entities/voice_command.dart';
 import '../../domain/entities/voice_command_result.dart';
 import '../../domain/entities/voice_recognition_event.dart';
 import '../../domain/enums/voice_feature_context.dart';
+import '../../domain/enums/voice_intent.dart';
 import '../../domain/enums/voice_rejection_reason.dart';
 import '../../domain/enums/voice_runtime_state.dart';
 import '../../domain/services/intelligent_intent_resolver.dart';
@@ -33,6 +34,7 @@ class VoiceKernelState {
     this.contextGeneration = 0,
     this.ttsGeneration = 0,
     this.lastResolvedCommand,
+    this.pendingConfirmationCommand,
     this.lastRejectionReason,
     this.lastResult,
     this.isHandsFreeActive = false,
@@ -46,6 +48,7 @@ class VoiceKernelState {
   final int contextGeneration;
   final int ttsGeneration;
   final VoiceCommand? lastResolvedCommand;
+  final VoiceCommand? pendingConfirmationCommand;
   final VoiceRejectionReason? lastRejectionReason;
   final VoiceCommandResult? lastResult;
   final bool isHandsFreeActive;
@@ -59,6 +62,7 @@ class VoiceKernelState {
     int? contextGeneration,
     int? ttsGeneration,
     VoiceCommand? lastResolvedCommand,
+    VoiceCommand? pendingConfirmationCommand,
     VoiceRejectionReason? lastRejectionReason,
     VoiceCommandResult? lastResult,
     bool? isHandsFreeActive,
@@ -66,6 +70,7 @@ class VoiceKernelState {
     bool clearCommand = false,
     bool clearRejection = false,
     bool clearResult = false,
+    bool clearPendingConfirmation = false,
   }) =>
       VoiceKernelState(
         runtimeState: runtimeState ?? this.runtimeState,
@@ -77,6 +82,8 @@ class VoiceKernelState {
         ttsGeneration: ttsGeneration ?? this.ttsGeneration,
         lastResolvedCommand:
             clearCommand ? null : (lastResolvedCommand ?? this.lastResolvedCommand),
+        pendingConfirmationCommand:
+            clearPendingConfirmation ? null : (pendingConfirmationCommand ?? this.pendingConfirmationCommand),
         lastRejectionReason:
             clearRejection
                 ? null
@@ -426,10 +433,20 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     VoiceDiagnosticLogger.asrEvent(event);
 
     // 1. Resolve intent
-    final command = _resolver.resolve(
+    var command = _resolver.resolve(
       transcript,
       context: state.activeContext,
     );
+    
+    // Intercept confirmation logic
+    if (state.pendingConfirmationCommand != null) {
+      if (command.intent is ConfirmYes) {
+        command = state.pendingConfirmationCommand!;
+      }
+      // Regardless of yes, no, or a new command entirely, the confirmation window closes
+      state = state.copyWith(clearPendingConfirmation: true);
+    }
+    
     VoiceDiagnosticLogger.resolved(command);
 
     // 2. Authorize command
@@ -506,7 +523,11 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     // Async gap: ensure the user hasn't triggered another session or exited
     if (state.commandSessionId != event.commandSessionId) return;
 
-    state = state.copyWith(lastResult: result);
+    state = state.copyWith(
+      lastResult: result,
+      pendingConfirmationCommand: result is VoiceCommandNeedsConfirmation ? command : null,
+      clearPendingConfirmation: result is! VoiceCommandNeedsConfirmation,
+    );
 
     // 4. Handle result feedback
     final feedback = switch (result) {
