@@ -274,14 +274,18 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       await _speechOutput.speak(text);
     } catch (e) {
       VoiceDiagnosticLogger.error('TTS feedback failed', e);
-    } finally {
-      _ttsEchoGuard.onTtsDone(utteranceId: utteranceId, generation: nextTtsGen);
-      if (state.isHandsFreeActive) {
-        await _speechRecognizer.resumeHandsFree(acceptNextCommand: false);
-        _transitionTo(VoiceRuntimeState.wakeListening);
-      } else {
-        _transitionTo(VoiceRuntimeState.disabled);
-      }
+    }
+
+    _ttsEchoGuard.onTtsDone(utteranceId: utteranceId, generation: nextTtsGen);
+      
+    // Async gap: verify this TTS generation was not superseded
+    if (state.ttsGeneration != nextTtsGen) return;
+
+    if (state.isHandsFreeActive) {
+      await _speechRecognizer.resumeHandsFree(acceptNextCommand: false);
+      _transitionTo(VoiceRuntimeState.wakeListening);
+    } else {
+      _transitionTo(VoiceRuntimeState.disabled);
     }
   }
 
@@ -316,7 +320,11 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       return null; // Fallback to Smart AI or ignore
     }
 
+    final currentGen = state.contextGeneration;
     final result = await _executor.execute(command);
+    
+    // Async gap: ensure the user hasn't changed screens
+    if (state.contextGeneration != currentGen) return null;
     
     final feedback = switch (result) {
       VoiceCommandSuccess(:final feedbackText) => feedbackText,
@@ -494,6 +502,9 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
 
     final result = await _executor.execute(command);
     VoiceDiagnosticLogger.consumed(recognitionId);
+
+    // Async gap: ensure the user hasn't triggered another session or exited
+    if (state.commandSessionId != event.commandSessionId) return;
 
     state = state.copyWith(lastResult: result);
 
