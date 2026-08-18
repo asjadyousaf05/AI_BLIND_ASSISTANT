@@ -458,7 +458,7 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     
     // If we're in a focused feature context (mobile detection or reader), be conservative:
     // accept only contextual commands and a small set of navigation/silence intents
-    bool _isAllowedInCurrentContext(VoiceCommand cmd) {
+    bool isAllowedInCurrentContext(VoiceCommand cmd) {
       final intent = cmd.intent;
       final ctx = state.activeContext;
 
@@ -477,7 +477,7 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
 
     // If the resolver returned a command that is not allowed in the current focused context,
     // treat it as unrecognized but avoid noisy feedback — silently resume wake listening.
-    if (!_isAllowedInCurrentContext(command)) {
+    if (!isAllowedInCurrentContext(command)) {
       VoiceDiagnosticLogger.info('Ignored out-of-context command in ${state.activeContext.label}: ${command.intent.runtimeType}');
       if (state.isHandsFreeActive) {
         unawaited(_speechRecognizer.resumeHandsFree(acceptNextCommand: false));
