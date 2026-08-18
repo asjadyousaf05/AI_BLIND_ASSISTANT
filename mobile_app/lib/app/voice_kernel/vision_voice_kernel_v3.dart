@@ -465,11 +465,23 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       // Always allow navigation back and dismiss intents
       if (intent is NavigateBack || intent is DismissAssistant || intent is Silence) return true;
 
+      // Protect mobile detection from noisy false-stops: require higher match score for stop-like intents
       if (ctx == VoiceFeatureContext.mobileDetection) {
-        return intent is StopMobileDetection || intent is PauseMobileDetection || intent is ResumeMobileDetection || intent is ReadRecentDetections;
+        const highConfidence = 0.7;
+        if (intent is StopMobileDetection || intent is PauseMobileDetection || intent is ResumeMobileDetection) {
+          return cmd.matchScore >= highConfidence;
+        }
+        return intent is ReadRecentDetections || intent is StartMobileDetection;
       }
+
+      // Scanner reading: accept reader controls (pause/resume/next/previous/repeat/etc.) and copy/rescan
       if (ctx == VoiceFeatureContext.scannerReading) {
-        return intent is Silence || intent is ReadingPause || intent is ReadingResume || intent is ReadingNext || intent is ReadingPrevious || intent is ReadingRepeat || intent is ReadingRestart || intent is CopyScannedText || intent is RescanDocument;
+        return intent is Silence || intent is ReadingPause || intent is ReadingResume || intent is ReadingNext || intent is ReadingPrevious || intent is ReadingRepeat || intent is ReadingRestart || intent is CopyScannedText || intent is RescanDocument || intent is ReadingSpell;
+      }
+
+      // Scanner capture: accept explicit scan/capture commands even with moderate confidence
+      if (ctx == VoiceFeatureContext.scannerCapture) {
+        if (intent is ScanDocument || intent is RescanDocument) return cmd.matchScore >= 0.35;
       }
 
       return true; // default allow in other contexts
