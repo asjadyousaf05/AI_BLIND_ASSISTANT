@@ -213,6 +213,13 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
         context: state.activeContext,
       );
 
+      // Ask the native recognizer to use the hands-free profile if available.
+      // This enables more aggressive VAD, noise suppression, and optimized
+      // vocabularies for wake+command recognition on devices that support it.
+      try {
+        await _speechRecognizer.setRecognitionProfile('hands_free');
+      } catch (_: Exception) {}
+
       await _speechRecognizer.startHandsFree(locale: 'en-US');
       _transitionTo(VoiceRuntimeState.wakeListening);
     } catch (e) {
