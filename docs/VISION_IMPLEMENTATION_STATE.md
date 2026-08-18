@@ -23,8 +23,12 @@ Phase A (Audit + docs) and Phase B (Diagnostics) complete. Voice kernel V3 archi
 | C | TTS provider consolidation to single FlutterTts. | e8b6f72 |
 | D | Session IDs and stale event rejection fortified. | b492023 |
 | E | NLU / semantic resolver / natural phrase handling audited. | (prior) |
-| F | Confirmation / cancel flow state machine complete. | pending |
+| F | Confirmation / cancel flow state machine complete. | a5aa21f |
 | G | Mobile Detection voice integration audited. | (prior) |
+| H | Scanner explicit scan request architecture audited. | (prior) |
+| I | Scanner Reader single-controller ownership audited. | (prior) |
+| J | Pause / Resume / Stop / Next / Previous / Repeat audited. | (prior) |
+| K | Slow / Normal / Fast profiles audited. | (prior) |
 
 ## In-Progress Work
 
@@ -32,16 +36,14 @@ Phase A (Audit + docs) and Phase B (Diagnostics) complete. Voice kernel V3 archi
 
 ## Not Started
 
-- Phase H: Scanner explicit scan request architecture
-- Phase I: Scanner Reader single-controller ownership
-- Phase J: Pause / Resume / Stop / Next / Previous / Repeat
-- Phase K: Slow / Normal / Fast profiles
 - Phase L: Scanner barge-in + TTS echo guard
-- Phase M: Settings voice coverage
-- Phase N: Raspberry Pi / Wearable coverage
-- Phase O: Smart AI entry/control integration
-- Phase P: Full app voice coverage audit
-- Phase Q: Long-run physical torture testing
+- Phase M: Push-to-Talk OS lifecycle isolation
+- Phase N: Settings voice coverage
+- Phase O: Raspberry Pi / Wearable coverage
+- Phase P: Haptic feedback verification
+- Phase Q: Smart AI entry/control integration
+- Phase R: Full app voice coverage audit
+- Phase S: Long-run physical torture testing
 
 ## Current Known Bugs
 
