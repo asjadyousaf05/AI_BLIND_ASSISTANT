@@ -115,6 +115,7 @@ class ServiceConfig:
     max_camera_restarts: int
     enable_mdns: bool
     enable_local_speech: bool
+    allow_first_client_enrollment: bool = False
     auto_bind: bool = False
     simulate: bool = False
 
@@ -161,6 +162,7 @@ class ServiceConfig:
             max_camera_restarts=_env_int("AIBA_MAX_CAMERA_RESTARTS", 3, 0, 10),
             enable_mdns=_env_bool("AIBA_ENABLE_MDNS", True),
             enable_local_speech=_env_bool("AIBA_ENABLE_LOCAL_SPEECH", True),
+            allow_first_client_enrollment=_env_bool("AIBA_ALLOW_FIRST_CLIENT_ENROLLMENT", False),
             auto_bind=auto_bind,
             simulate=simulate,
         )

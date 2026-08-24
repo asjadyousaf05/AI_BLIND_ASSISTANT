@@ -1,6 +1,6 @@
 # Raspberry Pi Wearable Mode
 
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-20
 
 ## Implemented architecture
 
@@ -14,19 +14,22 @@ Existing RaspberryPiScreen
        -> validated private IP/hostname fallback
        -> bounded retry + heartbeat + typed protocol v1
   -> Raspberry Pi long-lived Python service
-       -> protected pairing/verifier store
+       -> exclusive enrollment/protected verifier store
        -> Picamera2 OV5647 capture
        -> one-slot latest-frame queue
        -> one loaded NCNN OIV7 detector at 320 × 320
        -> class-aware NMS and relative visual priority
-       -> bounded local espeak-ng feedback
+       -> bounded phone-target priority feedback while authenticated
+       -> bounded local espeak-ng fallback after phone disconnect
        -> compact detections/status/health; never camera frames
 ```
 
 Mobile Mode has a separate camera, LiteRT model, state machine, and feedback
-pipeline. A missing or disconnected Pi does not disable it. Disconnecting or
-backgrounding Flutter closes only the phone transport; it never sends Stop, so
-active Pi assistance and local speech continue.
+pipeline. A missing or disconnected Pi does not disable it. While Flutter has
+an authenticated foreground connection, the Pi sends only bounded priority
+alerts to the phone's single voice/TTS owner. Disconnecting or backgrounding
+Flutter closes only the phone transport; it never sends Stop, so active Pi
+assistance continues and Pi-local speech becomes the fallback.
 
 ## Directory structure
 
@@ -36,6 +39,8 @@ active Pi assistance and local speech continue.
   deduplication, settings resolver, WebSocket repository/transport, and Android
   platform adapters.
 - `mobile_app/lib/app/wearable_controller.dart`: Riverpod UI/lifecycle intent.
+- `mobile_app/lib/app/wearable_phone_feedback_service.dart`: adapter from
+  authenticated priority events to the app's single voice/TTS owner.
 - `mobile_app/lib/features/raspberry_pi/`: the preserved accessible screen.
 - `raspberry_pi/src/ai_blind_pi/`: service, protocol, security, persistence,
   camera/model adapters, discovery, feedback, and CLI.
@@ -78,7 +83,7 @@ class-aware NMS, and emits left/center/right plus a 0–100 relative-priority
 score. `very_close` is used only for a large central box and is an uncalibrated
 visual heuristic—not metres.
 
-## Pairing, security, and reconnect
+## Code-free enrollment, security, and reconnect
 
 The Pi advertises mDNS identity and also supports remembered and manual local
 endpoints. Flutter refreshes a remembered endpoint by device ID before a
@@ -86,19 +91,35 @@ connection/reconnection, so DHCP address changes do not require a hardcoded
 phone address. Only one connection operation and one assistance pipeline may
 run at once.
 
-First pairing is local:
+First enrollment is local and requires no displayed code:
 
-1. The owner creates an eight-character, short-lived Pi code.
-2. Flutter connects to `/wearable/v1`, negotiates protocol 1, and submits the
-   code with its random installation ID.
-3. The Pi returns a random per-phone credential once. Android encrypts it with
+1. The production Pi environment explicitly enables first-client enrollment.
+2. Flutter connects to `/wearable/v1`, negotiates protocol 1, verifies the
+   `exclusive_first_client_enrollment` capability, and submits only its random
+   installation ID.
+3. An unclaimed Pi atomically accepts exactly one phone and returns a random
+   per-phone credential once. Android encrypts it with
    a non-exportable Keystore AES-GCM key; the Pi persists only a derived HMAC
    verifier in a mode-0600 atomic state file.
 4. Later connections prove the credential against a fresh nonce, then HMAC
    every envelope. Timestamp, sequence, message-ID replay, payload, and command
    state checks are enforced.
-5. Forget Device first revokes the active Pi credential, waits for the signed
-   acknowledgement, then removes Android secure storage.
+5. Forget Trusted Phone first revokes the active Pi credential, waits for the
+   signed acknowledgement, then removes Android secure storage.
+
+The production UI is prefilled with `10.141.17.148:8765`; a fresh install can
+tap `Connect & Start Detection` directly. Use the editable address only if the
+Pi's DHCP address changes. First use enrolls,
+authenticates, synchronizes settings, and starts detection in one action; later
+sessions reuse the Keystore credential. The app does not SSH into the Pi,
+request/embed a Pi password, or allow a manually entered IP to bypass protocol
+authentication.
+
+First enrollment is trust-on-first-use. Perform it only on an owner-controlled,
+non-isolated private router/hotspot. If the phone credential is lost while the
+Pi still trusts it, run `ai-blind-pi revoke all` locally on the Pi before
+enrolling again. The Pi rejects a second phone while any trusted credential is
+active.
 
 Heartbeat loss triggers at most five reconnect attempts with exponential
 backoff, a maximum delay, and jitter. A new attempt re-runs mDNS endpoint
@@ -114,8 +135,8 @@ then advertises the new endpoint and Flutter refreshes it by stable device ID.
 
 Protocol v1 uses authenticated `ws://`, not TLS. HMAC provides peer
 authentication, integrity, freshness, and replay protection, but not
-confidentiality. Pair only on a trusted private LAN, bind the service to the
-current private interface, do not port-forward TCP 8765, and do not expose it
+confidentiality. Enroll/connect only on a trusted private LAN, bind the service
+to the current private interface, do not port-forward TCP 8765, and do not expose it
 on public Wi-Fi. No certificate-validation bypass or global network override is
 present. See `wearable-protocol.md` for the exact schema/canonicalization.
 
@@ -132,14 +153,15 @@ For Debian 13's CPython 3.13 aarch64 environment, the expected wheel is
 with SHA-256
 `cc2c8000e4c0cae3fccc3ed5661c170f0daa41cfff41910407c10a62e9e586fc`.
 
-Copy the `raspberry_pi` directory and finalized model directory to the Pi, then
-from the Pi:
+Copy the `raspberry_pi` directory and finalized model directory to the Pi. The
+configured address is currently `10.141.17.148`; use it only after confirming
+that it is still assigned and reachable from the same private LAN:
 
 ```sh
 # Run on the Mac from the repository root after SSH key access is configured.
-scp -r raspberry_pi asjad@rpi3-ml.local:~/
-scp -r /path/to/yolov8n-oiv7_ncnn_model asjad@rpi3-ml.local:~/
-ssh asjad@rpi3-ml.local
+scp -r raspberry_pi <pi-user>@10.141.17.148:~/
+scp -r /path/to/yolov8n-oiv7_ncnn_model <pi-user>@10.141.17.148:~/
+ssh <pi-user>@10.141.17.148
 ```
 
 Then run on the Pi:
@@ -170,7 +192,7 @@ For a replacement/fine-tuned model, create a new reviewed checksum file and
 pass `--model-checksums FILE`. The service will still reject wrong class
 count/order, size, task, end-to-end layout, or missing files.
 
-### Pair and manage the service
+### Enroll and manage the service
 
 ```sh
 sudo systemctl enable ai-blind-assistant-pi.service
@@ -180,7 +202,6 @@ sudo systemctl restart ai-blind-assistant-pi.service
 sudo systemctl status ai-blind-assistant-pi.service --no-pager
 sudo journalctl -u ai-blind-assistant-pi.service -n 200 --no-pager
 sudo tail -n 200 /var/log/ai-blind-assistant/wearable-service.log
-sudo -u aiba /opt/ai-blind-assistant/venv/bin/ai-blind-pi pairing-code
 sudo -u aiba /opt/ai-blind-assistant/venv/bin/ai-blind-pi status
 sudo -u aiba /opt/ai-blind-assistant/venv/bin/ai-blind-pi revoke all
 sudo -u aiba /opt/ai-blind-assistant/venv/bin/ai-blind-pi validate-model
@@ -206,7 +227,8 @@ AIBA_PI_PYTHON=../raspberry_pi/.venv/bin/python \
   flutter --no-version-check test test/features/wearable
 ```
 
-The cross-stack test launches the real Python simulator, performs pairing,
+The cross-stack test launches the real Python simulator, performs exclusive
+code-free enrollment,
 authentication, settings request, start, detection event, disconnect,
 reconnect-to-running, pause, resume, stop, credential revocation, and local
 forget. Simulator detections are test evidence for networking/state logic only,
@@ -239,7 +261,7 @@ adb devices -l
 flutter --no-version-check run -d <android-device-id>
 ```
 
-ADB pairing is unrelated to wearable pairing and no ADB code is stored.
+ADB pairing is unrelated to wearable enrollment and no ADB code is stored.
 
 ## Required physical Pi checks
 
@@ -254,19 +276,22 @@ sudo systemctl restart ai-blind-assistant-pi.service
 sudo journalctl -u ai-blind-assistant-pi.service -n 200 --no-pager
 ```
 
-Then pair a physical Android phone, test mDNS and `rpi3-ml.local`, start/pause/
+Then enroll a physical Android phone, test mDNS and `rpi3-ml.local`, start/pause/
 resume/stop, background/resume, process recreation, Wi-Fi interruption, Pi
 reboot, WAN-disabled local operation, missing model, invalid/revoked credential,
-and TalkBack/high-contrast/large-text focus. Record mean/p95 NCNN latency, FPS,
+phone-target priority audio, Pi-speech disconnect fallback, and
+TalkBack/high-contrast/large-text focus. Record mean/p95 NCNN latency, FPS,
 memory, temperature, throttling, and sustained power only from the real Pi.
 
 ## Troubleshooting and limitations
 
 - **No discovery:** verify phone/Pi share a non-isolated LAN, Avahi is active,
   and `_aiba-wearable._tcp` is visible. Use `rpi3-ml.local` or current private
-  address as fallback.
-- **Authentication:** Forget Device, create a fresh Pi code, and pair before it
-  expires. Check phone/Pi clocks when signed messages are reported stale.
+  address as fallback. Same internet access is not sufficient if the access
+  point isolates clients or assigns non-routed local subnets.
+- **Authentication:** Forget Trusted Phone. If the Pi retained the old
+  credential, run local `ai-blind-pi revoke all`, then use Connect & Start to
+  enroll again. Check phone/Pi clocks when signed messages are reported stale.
 - **Protocol mismatch:** install matching app and service versions; version 1
   intentionally refuses incompatible peers.
 - **Camera timeout:** use `rpicam-hello --list-cameras` (or the OS-provided
@@ -283,8 +308,9 @@ memory, temperature, throttling, and sustained power only from the real Pi.
   reports wearable vibration as unavailable; Mobile Mode vibration remains
   independent. Add and physically validate a bounded motor driver before
   enabling Pi haptics.
-- **Speech:** the Pi owns wearable speech and requires `espeak-ng`; the phone
-  intentionally does not repeat detection announcements.
+- **Speech:** an authenticated foreground phone owns priority speech. The Pi
+  requires `espeak-ng` for background/disconnect fallback. The protocol marks
+  exactly one target so the phone and Pi do not duplicate the same alert.
 - **Safety:** OIV7 detections can be wrong or missed. This is an aid, not a
   replacement for a cane, guide dog, mobility training, human assistance, or
   judgment. No monocular metric-distance claim is made.

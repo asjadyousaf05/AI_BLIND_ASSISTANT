@@ -1,5 +1,114 @@
 # Changelog
 
+## 2026-08-20 — Module 57 Exclusive Code-Free Pi Enrollment
+
+- Removed the wearable pairing-code field and Pair Device action. First use is
+  now one `Connect & Start Detection` action; a fresh install automatically
+  selects configured endpoint `10.141.17.148:8765`.
+- Added strict `enrollment_request` / `enrollment_result` protocol messages and
+  an explicitly configured first-client enrollment capability.
+- Restricted enrollment to private/loopback peers and an unclaimed Pi; made the
+  protected state update atomic so one simultaneous phone wins and later phones
+  receive `enrollment_closed`.
+- Preserved Android Keystore credential protection, protected Pi verifiers,
+  nonce-bound HMAC authentication, signed commands, replay rejection,
+  revocation, phone-target detection audio and Pi disconnect fallback.
+- Kept Linux login credentials and SSH implementation out of Flutter, Android
+  storage, protocol traffic, tests and the release APK.
+- Added trust-on-first-use disclosure and local `revoke all` recovery guidance.
+- Verification: formatter/Ruff clean, analyzer clean, 319 Flutter tests, 15 Pi
+  tests, Android app-native unit build, signed/aligned 125,769,244-byte ARM64
+  release installed as `1.4.2` / split code `4042` on TECNO BG6.
+- Physical Pi deployment remains blocked because `10.141.17.148` is still
+  unreachable from the phone/current Mac network.
+
+## 2026-08-20 — Module 56 Raspberry Pi Detection With Phone Audio
+
+- Configured Wearable Mode for `10.141.17.148:8765` while retaining local
+  discovery and editable private-host fallback.
+- Added a post-pairing `Connect & Start Detection` action that authenticates,
+  synchronizes settings, and starts the Pi assistance pipeline in one action.
+- Changed the Pi's bounded feedback policy to target an authenticated connected
+  phone for priority speech and retain Pi-local speech after disconnect.
+- Routed signed/deduplicated priority events through the app's single
+  `VisionVoiceKernelV3` microphone/TTS owner; ordinary detections stay silent.
+- Removed uncommitted embedded SSH credentials, the `dartssh2` dependency, and
+  the unauthenticated manual-IP WebSocket bypass. Secure short-code pairing and
+  Android Keystore credentials remain mandatory.
+- Updated the accessible Pi UI with configured-address, first-pairing,
+  phone-feedback, latest-target, and TTS failure information.
+- Verification: analyzer clean; 316 Flutter tests including the live Python
+  simulator process; Pi Ruff clean and 14 tests passed; app-native Gradle task
+  passed; signed ARM64 125,769,244-byte release installed/cold-launched on TECNO
+  BG6 as `1.4.1` / code `4041`.
+- Physical Pi activation remains blocked: `10.141.17.148` is unreachable, port
+  8765 is down, and the phone/Mac are currently on different `/21` subnets.
+
+## 2026-08-20 — Module 55 Complete Document Reader Controls and UI
+
+- Fixed the reader Pause UI path that immediately called Stop and the shared-TTS
+  feedback race that cancelled newly resumed/restarted/spelled document audio.
+- Preserved Scanner reading context after Stop so Start/Resume remains
+  authorized and audible without another wake phrase.
+- Added first-line, final-line, and one-based numbered-line domain actions;
+  corrected “last line” semantics and added digit/cardinal/ordinal resolution.
+- Expanded the focused native Scanner graph with start/stop/first/last/spell and
+  spoken line numbers one through one hundred plus bounded polite variants.
+- Made Previous, Next, Repeat, document taps, First, Last, and direct-line
+  selection start reading immediately; Spell Out now spells the complete line.
+- Redesigned the result controls with visible Start/Resume/Pause, Stop, First,
+  Go-to-Line, Last, Repeat, Spell, speed, progress, and voice-command help, all
+  with TalkBack labels and responsive controls.
+- Verification: 312 Flutter tests passed with one gated skip; 8 native tests
+  passed; changed-scope analysis is clean. Split release builds succeeded and
+  the 127.1 MB ARM64 release updated successfully on TECNO BG6.
+
+## 2026-08-20 — Module 54 Persistent Voice Session and Scanner Command Parity
+
+- Changed foreground hands-free control from one wake per command to one wake
+  per active session. Commands, feedback, rejection, and bounded quiet timeouts
+  remain in command mode until an offline “goodbye” restores wake-only mode.
+- Preserved Smart AI “bye” as a return to the still-active offline assistant;
+  a following offline goodbye puts Vision AI to sleep.
+- Expanded the focused native Scanner grammar across capture/rescan,
+  pause/resume/stop, next/previous/repeat/restart, spelling, all reading speeds,
+  copy, camera, flashlight, navigation, and polite semantic variants.
+- Made the voice kernel the sole decoder-profile owner, added safe immediate
+  context switching for active sessions, authorized reading-speed/camera
+  controls during playback, and routed torch commands to the Scanner camera.
+- Verification: 309 Flutter tests passed with one gated skip; 8 native tests
+  passed; analyzer reported only the same 6 unrelated pre-existing findings.
+  The 127.1 MB signed ARM64 release updated and cold-launched on TECNO BG6 in
+  2.19 seconds with no immediate fatal log. Spoken persistent-session and
+  Scanner acceptance remains pending.
+
+## 2026-08-20 — Module 53 Foreground Voice Reliability and Smart AI Routing
+
+- Replaced noise-prone partial/standalone wake activation with final-result,
+  prefix-only “Hey/Hi/Hello Vision AI” matching and a wake-only Vosk grammar.
+- Added focused app/scanner grammars with semantic aliases for Mobile Mode,
+  feedback/accessibility settings, navigation, speech rate, cooldown, reader,
+  utility, and wearable commands. Unknown non-wake speech remains silent.
+- Removed reflection-based live Vosk recognizer replacement. Grammar switches
+  now cancel and join the decoder thread before resetting the same recognizer,
+  avoiding concurrent native mutation identified as the likely crash race.
+- Retained supported Android AEC, noise suppression, and automatic gain control
+  objects for the full `VOICE_RECOGNITION` audio session.
+- Made `VisionVoiceKernelV3` the microphone owner across hands-free and manual
+  Smart AI recording. Smart AI now uses the same foreground Vosk input, routes
+  known controls locally, sends only unmatched transcript text to the paired
+  backend, listens for follow-ups in the foreground, and exits on “bye”/“by”.
+- Raised fuzzy intent acceptance, required whole-word semantic matches, rejected
+  nonempty unknown commands, and removed transcript contents from diagnostics.
+- Verification: 304 Flutter tests passed with one gated skip; 7 native tests
+  passed; debug APK built. Analyzer reported only 6 pre-existing unrelated
+  user-work findings. The aggregate Gradle test command is blocked in 10
+  third-party CameraX Robolectric classes because SDK 36 requires Java 21 and
+  the host has Java 17. The owner-approved replacement of the debug-signed app
+  with the 127.1 MB signed ARM64 release succeeded on TECNO BG6; cold launch
+  completed in 1.25 seconds with no immediate fatal log. Physical
+  crash/noise/accent, TalkBack, battery, and thermal acceptance remain open.
+
 ## 2026-08-16 — Professional Voice Assistant Audio Isolation & "Stop Detection" Priority (v1.4.0+2039)
 
 - **Detection Audio Isolation & Silent Gate**: Voice assistant enters Command-Only Mode while camera detection is running; silently ignores non-command ambient noise and TTS echoes without conversational AI chatter or *"Sorry, I didn't recognize that command"* audio collisions.

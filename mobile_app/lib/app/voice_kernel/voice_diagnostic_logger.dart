@@ -14,14 +14,8 @@ import '../../domain/enums/voice_runtime_state.dart';
 abstract final class VoiceDiagnosticLogger {
   static const _name = 'VoiceKernel';
 
-  static void stateTransition(
-    VoiceRuntimeState from,
-    VoiceRuntimeState to,
-  ) {
-    developer.log(
-      'STATE ${from.name} → ${to.name}',
-      name: _name,
-    );
+  static void stateTransition(VoiceRuntimeState from, VoiceRuntimeState to) {
+    developer.log('STATE ${from.name} → ${to.name}', name: _name);
   }
 
   static void contextChange(
@@ -50,11 +44,16 @@ abstract final class VoiceDiagnosticLogger {
 
   static void asrEvent(VoiceRecognitionEvent event) {
     final type = event.isFinal ? 'ASR_FINAL' : 'ASR_PARTIAL';
+    final wordCount = event.transcript
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .length;
     developer.log(
       '$type recognition=${event.recognitionId} '
       'recSession=${event.recognizerSessionId} '
       'cmdSession=${event.commandSessionId} '
-      'text="${_truncate(event.transcript, 60)}"',
+      'words=$wordCount',
       name: _name,
     );
   }
@@ -75,10 +74,7 @@ abstract final class VoiceDiagnosticLogger {
     );
   }
 
-  static void rejected(
-    VoiceCommand command,
-    VoiceRejectionReason reason,
-  ) {
+  static void rejected(VoiceCommand command, VoiceRejectionReason reason) {
     developer.log(
       'AUTH allowed=false intent=${command.intent.runtimeType} '
       'reason=${reason.name}',
@@ -87,32 +83,19 @@ abstract final class VoiceDiagnosticLogger {
   }
 
   static void executed(VoiceCommand command) {
-    developer.log(
-      'EXECUTE ${command.intent.runtimeType}',
-      name: _name,
-    );
+    developer.log('EXECUTE ${command.intent.runtimeType}', name: _name);
   }
 
   static void consumed(String recognitionId) {
-    developer.log(
-      'CONSUME recognition=$recognitionId',
-      name: _name,
-    );
+    developer.log('CONSUME recognition=$recognitionId', name: _name);
   }
 
   static void wakeDetected({bool withCommand = false}) {
-    developer.log(
-      'WAKE detected withCommand=$withCommand',
-      name: _name,
-    );
+    developer.log('WAKE detected withCommand=$withCommand', name: _name);
   }
 
   static void error(String message, [Object? error]) {
-    developer.log(
-      'ERROR $message',
-      name: _name,
-      error: error,
-    );
+    developer.log('ERROR $message', name: _name, error: error);
   }
 
   static void info(String message) {
@@ -134,17 +117,11 @@ abstract final class VoiceDiagnosticLogger {
   }
 
   static void scanAccepted(String scanRequestId) {
-    developer.log(
-      'SCAN_ACCEPTED requestId=$scanRequestId',
-      name: _scannerName,
-    );
+    developer.log('SCAN_ACCEPTED requestId=$scanRequestId', name: _scannerName);
   }
 
   static void scanConsumed(String scanRequestId) {
-    developer.log(
-      'SCAN_CONSUMED requestId=$scanRequestId',
-      name: _scannerName,
-    );
+    developer.log('SCAN_CONSUMED requestId=$scanRequestId', name: _scannerName);
   }
 
   static void ocrAction(String action, {String? detail}) {
@@ -188,7 +165,4 @@ abstract final class VoiceDiagnosticLogger {
       name: _readerName,
     );
   }
-
-  static String _truncate(String text, int maxLength) =>
-      text.length <= maxLength ? text : '${text.substring(0, maxLength)}…';
 }

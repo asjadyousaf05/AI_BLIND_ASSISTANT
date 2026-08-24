@@ -64,10 +64,10 @@ class EspeakSpeech(SpeechAdapter):
 
 
 class FeedbackPolicy:
-    """Owns wearable feedback so assistance survives phone disconnection.
+    """Selects one bounded feedback owner for each stable priority alert.
 
-    The phone receives compact events for status only and never repeats a Pi
-    alert. A bounded stability/cooldown policy prevents continuous speech.
+    An authenticated connected phone is preferred so its speaker can announce
+    detections. Local Pi speech remains the fallback after phone disconnection.
     """
 
     def __init__(
@@ -92,7 +92,6 @@ class FeedbackPolicy:
         *,
         phone_connected: bool,
     ) -> tuple[Detection | None, str]:
-        _ = phone_connected
         active_keys = {(item.class_id, item.direction) for item in detections}
         for key in list(self._stability):
             if key not in active_keys:
@@ -127,10 +126,13 @@ class FeedbackPolicy:
                 self.max_announcements_per_minute + self.urgent_burst_allowance
             ):
                 continue
-            # The Pi always owns wearable feedback. phone_connected is retained
-            # in this domain boundary for observability and future protocol
-            # compatibility, but it never transfers alert ownership.
-            target = "pi"
+            target = (
+                "phone"
+                if phone_connected and settings.speech_enabled
+                else "pi"
+                if settings.speech_enabled
+                else "none"
+            )
             if target == "pi" and settings.speech_enabled:
                 message = self._message(candidate)
                 if self._speech_task and not self._speech_task.done():

@@ -17,6 +17,10 @@ abstract interface class WearableRepository {
 
   void selectDevice(WearableDevice device);
 
+  /// Enrolls the first trusted phone without a displayed pairing code.
+  Future<void> enroll();
+
+  /// Legacy owner-code pairing retained for protocol compatibility.
   Future<void> pair(String pairingCode);
 
   Future<void> connect();

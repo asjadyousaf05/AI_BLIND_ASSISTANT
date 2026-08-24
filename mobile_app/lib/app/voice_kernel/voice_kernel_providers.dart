@@ -8,8 +8,9 @@ import 'vision_voice_kernel_v3.dart';
 export 'vision_voice_kernel_v3.dart';
 
 /// Provider for [IntelligentIntentResolver].
-final intelligentIntentResolverProvider =
-    Provider<IntelligentIntentResolver>((ref) {
+final intelligentIntentResolverProvider = Provider<IntelligentIntentResolver>((
+  ref,
+) {
   return IntelligentIntentResolver();
 });
 
@@ -19,8 +20,7 @@ final commandDeduplicatorProvider = Provider<CommandDeduplicator>((ref) {
 });
 
 /// Provider for [CommandCircuitBreaker].
-final commandCircuitBreakerProvider =
-    Provider<CommandCircuitBreaker>((ref) {
+final commandCircuitBreakerProvider = Provider<CommandCircuitBreaker>((ref) {
   return CommandCircuitBreaker();
 });
 
@@ -32,5 +32,5 @@ final commandExecutorProvider = Provider<CommandExecutor>((ref) {
 /// Central provider for [VisionVoiceKernelV3].
 final visionVoiceKernelProvider =
     NotifierProvider<VisionVoiceKernelV3, VoiceKernelState>(
-  VisionVoiceKernelV3.new,
-);
+      VisionVoiceKernelV3.new,
+    );

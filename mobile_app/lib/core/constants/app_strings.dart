@@ -45,7 +45,7 @@ abstract final class AppStrings {
   static const raspberryPiLocalOnly =
       'Wearable controls and compact detection events stay on the local network. No camera frames or cloud services are used.';
   static const raspberryPiFeedbackOwnership =
-      'The Raspberry Pi provides wearable speech and vibration by default, including if the phone disconnects. The phone does not repeat detection alerts.';
+      'While the phone is securely connected, prioritized Raspberry Pi detection alerts play through the phone speaker. If the phone disconnects, the Pi uses its local speech fallback when available.';
   static const localSettingsOnly =
       'Settings are stored locally on this device.';
   static const safetyAid =

@@ -17,7 +17,7 @@ void main() {
   final python = Platform.environment['AIBA_PI_PYTHON'];
 
   test(
-    'Flutter completes real pairing, control, event, disconnect and reconnect '
+    'Flutter completes code-free enrollment, control, event and reconnect '
     'against the Python simulated Pi',
     () async {
       final root = await Directory.systemTemp.createTemp('aiba-cross-stack-');
@@ -31,19 +31,10 @@ void main() {
         'AIBA_LOG_DIR': '${root.path}/logs',
         'AIBA_ENABLE_MDNS': 'false',
         'AIBA_ENABLE_LOCAL_SPEECH': 'false',
+        'AIBA_ALLOW_FIRST_CLIENT_ENROLLMENT': 'true',
       };
-      final pairingResult = await Process.run(
-        python!,
-        const ['-m', 'ai_blind_pi', 'pairing-code', '--ttl', '120'],
-        environment: {...environment, 'AIBA_PORT': '8765'},
-      );
-      expect(pairingResult.exitCode, 0, reason: '${pairingResult.stderr}');
-      final pairingCode = (pairingResult.stdout as String)
-          .split('\n')
-          .first
-          .trim();
       final process = await Process.start(
-        python,
+        python!,
         [
           '-m',
           'ai_blind_pi',
@@ -89,13 +80,15 @@ void main() {
         );
         await repository.initialize();
         repository.selectDevice(device);
-        await repository.pair(pairingCode);
+        await repository.enroll();
         await repository.connect();
         expect(repository.state.phase, WearableConnectionPhase.connected);
         expect(repository.state.currentSettings, isNotNull);
 
         final detectionFuture = repository.events
-            .where((event) => event is WearableDetectionReceived)
+            .where(
+              (event) => event is WearableDetectionReceived && event.isHazard,
+            )
             .cast<WearableDetectionReceived>()
             .first
             .timeout(const Duration(seconds: 4));
@@ -104,6 +97,8 @@ void main() {
         expect(event.detection.className, 'Car');
         expect(event.detection.sourceDeviceId, 'pi-flutter-e2e');
         expect(event.detection.direction.name, 'center');
+        expect(event.detection.feedbackTarget.name, 'phone');
+        expect(event.detection.piAnnounced, isFalse);
 
         await repository.disconnect();
         expect(repository.state.phase, WearableConnectionPhase.disconnected);

@@ -245,7 +245,7 @@ abstract final class SemanticLexicon {
     final sorted = verbMap.keys.toList()
       ..sort((a, b) => b.length.compareTo(a.length));
     for (final phrase in sorted) {
-      if (text.contains(phrase)) {
+      if (_containsPhrase(text, phrase)) {
         return verbMap[phrase];
       }
     }
@@ -257,7 +257,7 @@ abstract final class SemanticLexicon {
     final sorted = entityMap.keys.toList()
       ..sort((a, b) => b.length.compareTo(a.length));
     for (final phrase in sorted) {
-      if (text.contains(phrase)) {
+      if (_containsPhrase(text, phrase)) {
         return entityMap[phrase];
       }
     }
@@ -272,8 +272,9 @@ abstract final class SemanticLexicon {
     final usedRanges = <(int, int)>[];
 
     for (final phrase in sorted) {
-      final index = text.indexOf(phrase);
-      if (index < 0) continue;
+      final match = _phrasePattern(phrase).firstMatch(text);
+      if (match == null) continue;
+      final index = match.start + (match.group(1)?.length ?? 0);
       final end = index + phrase.length;
       final overlaps = usedRanges.any(
         (range) => index < range.$2 && end > range.$1,
@@ -284,4 +285,10 @@ abstract final class SemanticLexicon {
     }
     return found;
   }
+
+  static bool _containsPhrase(String text, String phrase) =>
+      _phrasePattern(phrase).hasMatch(text);
+
+  static RegExp _phrasePattern(String phrase) =>
+      RegExp('(^|\\s)${RegExp.escape(phrase)}(?=\\s|\$)');
 }

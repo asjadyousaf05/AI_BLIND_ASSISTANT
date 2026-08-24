@@ -31,7 +31,7 @@ The **Document Scanner** allows blind and visually impaired users to independent
 ### Core Accessibility Principles:
 1. **Real-Time Framing Guidance**: Live audio feedback helps the user center and align the document without needing sight.
 2. **Grammatical Sentence Segmentation**: Natural Language Processing joins OCR line-wraps and preserves abbreviations (*Dr.*, *Mr.*, *e.g.*, *$19.99*) so reading is fluent and grammatically correct.
-3. **Interactive Karaoke Player**: The user has full transport control to pause, resume, jump to previous/next sentences, or spell out difficult words letter-by-letter.
+3. **Interactive Karaoke Player**: The user has full transport control to start, pause, resume, stop, jump to previous/next/first/last/numbered reading lines, or spell the selected line letter-by-letter.
 4. **Hands-Free Barge-In Voice Control**: The user can speak voice commands (*"Pause"*, *"Repeat"*, *"Scan"*, *"Stop"*) while the phone is reading, and it responds with sub-50ms latency.
 
 ---
@@ -113,14 +113,17 @@ Sentence 3: "Do not exceed dosage!"
 | :--- | :--- | :--- |
 | *"Scan document"*, *"Scan"*, *"Take photo"* | Captures and reads page | Freezes camera, runs OCR, starts reading sentence 1. |
 | *"Pause"*, *"Hold on"* | Pauses player | Halts TTS immediately; saves current sentence index. |
-| *"Resume"*, *"Continue"* | Resumes player | Resumes speaking from the exact paused sentence. |
+| *"Start reading"*, *"Resume"*, *"Continue"* | Starts/resumes player | Starts from the selected line; a completed document restarts at line 1. |
+| *"Stop reading"*, *"Quiet"*, *"Silence"* | Stops audio | Silences TTS, preserves the selected line, and keeps reader commands active. |
 | *"Repeat"*, *"Say again"* | Repeats current sentence | Re-reads current active sentence aloud. |
 | *"Next"*, *"Next sentence"* | Steps forward | Jumps to sentence `N + 1` and reads it. |
-| *"Previous"*, *"Last line"* | Steps backward | Jumps to sentence `N - 1` and reads it. |
-| *"Spell out"* | Spells current sentence | Reads characters separated by dashes for clarity. |
-| *"Restart"* | Restarts document | Resets index to sentence 0 and reads from start. |
+| *"Previous"*, *"Previous line"* | Steps backward | Jumps to reading line `N - 1` and reads from there. |
+| *"First line"*, *"Start from beginning"* | Reads first line | Jumps to reading line 1 and starts speaking. |
+| *"Last line"*, *"Final line"* | Reads final line | Jumps to and reads the final normalized reading line. |
+| *"Go to line 5"*, *"Read sentence twenty one"* | Reads selected line | Uses a one-based reading-line number; focused voice supports 1-100. |
+| *"Spell out"* | Spells current reading line | Reads every alphanumeric character in the selected line separately. |
+| *"Restart"* | Restarts document | Selects reading line 1 and reads from start. |
 | *"Study mode"* / *"Skim mode"* | Changes speech profile | Adjusts rate and inter-sentence pause dynamically. |
-| *"Stop"*, *"Quiet"*, *"Silence"* | Silences audio | Pure instant silence with zero verbal echo loop. |
 | *"Flashlight on"* / *"Torch off"* | Controls camera LED | Toggles hardware torch for optimal lighting. |
 | *"Copy text"* | Clipboard export | Copies complete recognized text for use in other apps. |
 | *"Ask AI"* | Summarization | Hands off text to Smart AI assistant for complex Q&A. |
@@ -134,15 +137,17 @@ Sentence 3: "Do not exceed dosage!"
  | [Status Pill] Scanner: Reading Text                     |
  +---------------------------------------------------------+
  | [PLAYBACK TRANSPORT CONSOLE]                            |
- | Sentence 1 of 3 (33%) • 42 Words        [Normal Speed]  |
- | [⏮️ Prev]  [⏯️ Pause]  [⏭️ Next]  [🔁 Repeat]  [🔤 Spell]  |
+ | Line 1 of 3 (33%) • 42 Words            [Normal Speed]  |
+ | [⏮️ Prev]       [⏯️ Pause/Start]       [⏭️ Next]        |
+ | [First]          [Go to Line 1]          [Last]          |
+ | [Stop Reading] [Repeat] [Spell Out] [Study/Normal/Fast] |
  +---------------------------------------------------------+
  | [HERO SPOTLIGHT READING CARD]                           |
- | 🔊 NOW READING (SENTENCE 1 / 3)             [🛑 Stop]   |
+| 🔊 NOW READING (LINE 1 / 3)                 [🛑 Stop]   |
  | "Dr. Smith prescribed 2.5 mg of aspirin."              |
  +---------------------------------------------------------+
  | [FULL DOCUMENT KARAOKE CARD]                            |
- | 📄 Document Text (3 Sentences • 42 Words)  [📋 Copy]    |
+| 📄 Document Text (3 Reading Lines • 42 Words) [📋 Copy] |
  | (1) 🔊 "Dr. Smith prescribed 2.5 mg of aspirin."        |
  | (2)    "Take once daily after breakfast."               |
  | (3)    "Do not exceed dosage!"                          |

@@ -39,7 +39,10 @@ enum _OcrState { idle, cameraReady, capturing, processing, result, error }
 /// - Full tactile and voice-controlled media playback console (Study, Normal, Skim, Spell).
 /// - Quick clipboard copy and accessible TalkBack semantics.
 class OcrScannerScreen extends ConsumerStatefulWidget {
-  const OcrScannerScreen({super.key});
+  const OcrScannerScreen({super.key, this.initialDocumentTextForTesting});
+
+  @visibleForTesting
+  final String? initialDocumentTextForTesting;
 
   @override
   ConsumerState<OcrScannerScreen> createState() => _OcrScannerScreenState();
@@ -94,30 +97,25 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
           _voiceKernel.setFeatureContext(VoiceFeatureContext.scannerReading);
           ref.read(assistantAudioStateProvider.notifier).state =
               AssistantAudioState.scannerReading;
-          unawaited(
-            ref
-                .read(onDeviceSpeechRecognitionServiceProvider)
-                .setRecognitionProfile('barge_in'),
-          );
         } else if (currentStatus == PlaybackStatus.paused) {
           _voiceKernel.setFeatureContext(VoiceFeatureContext.scannerReading);
           ref.read(assistantAudioStateProvider.notifier).state =
               AssistantAudioState.scannerPaused;
-          unawaited(
-            ref
-                .read(onDeviceSpeechRecognitionServiceProvider)
-                .setRecognitionProfile('scanner_commands'),
-          );
         } else if (currentStatus == PlaybackStatus.completed ||
             currentStatus == PlaybackStatus.idle) {
-          _voiceKernel.setFeatureContext(VoiceFeatureContext.scannerCapture);
-          ref.read(assistantAudioStateProvider.notifier).state =
-              AssistantAudioState.scannerReady;
-          unawaited(
-            ref
-                .read(onDeviceSpeechRecognitionServiceProvider)
-                .setRecognitionProfile('normal'),
+          final hasReadableDocument =
+              _state == _OcrState.result &&
+              !(_textPlayer?.document.isEmpty ?? true);
+          _voiceKernel.setFeatureContext(
+            hasReadableDocument
+                ? VoiceFeatureContext.scannerReading
+                : VoiceFeatureContext.scannerCapture,
           );
+          ref
+              .read(assistantAudioStateProvider.notifier)
+              .state = hasReadableDocument
+              ? AssistantAudioState.scannerPaused
+              : AssistantAudioState.scannerReady;
         }
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) setState(() {});
@@ -134,7 +132,16 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
       curve: Curves.easeInOut,
     );
 
-    unawaited(_initCamera());
+    final initialDocumentText = widget.initialDocumentTextForTesting;
+    if (initialDocumentText != null && initialDocumentText.trim().isNotEmpty) {
+      _state = _OcrState.result;
+      _recognisedText = initialDocumentText;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _textPlayer?.load(initialDocumentText);
+      });
+    } else {
+      unawaited(_initCamera());
+    }
   }
 
   @override
@@ -147,11 +154,6 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
       try {
         ref.read(assistantAudioStateProvider.notifier).state =
             AssistantAudioState.idle;
-        unawaited(
-          ref
-              .read(onDeviceSpeechRecognitionServiceProvider)
-              .setRecognitionProfile('normal'),
-        );
       } catch (_) {}
     });
     _scanLaserController.dispose();
@@ -227,16 +229,17 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
   }
 
   Future<void> _toggleTorch() async {
+    await _setTorchEnabled(!_isTorchOn);
+  }
+
+  Future<void> _setTorchEnabled(bool enabled) async {
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) return;
     try {
-      final newTorchState = !_isTorchOn;
-      await controller.setFlashMode(
-        newTorchState ? FlashMode.torch : FlashMode.off,
-      );
-      setState(() => _isTorchOn = newTorchState);
+      await controller.setFlashMode(enabled ? FlashMode.torch : FlashMode.off);
+      setState(() => _isTorchOn = enabled);
       HapticFeedback.lightImpact();
-      _announce(newTorchState ? 'Flashlight on.' : 'Flashlight off.');
+      _announce(enabled ? 'Flashlight on.' : 'Flashlight off.');
     } catch (_) {}
   }
 
@@ -278,7 +281,7 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
   Future<void> _captureAndRecognise() async {
     final requestId = 'scan_${DateTime.now().millisecondsSinceEpoch}';
     VoiceDiagnosticLogger.scanAccepted(requestId);
-    
+
     await _stopSpeaking();
     HapticFeedback.heavyImpact();
     if (_isInitializingCamera) {
@@ -371,9 +374,144 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
     if (mounted) setState(() => _isSpeaking = false);
   }
 
+  Future<void> _pauseReading() async {
+    await _textPlayer?.pause();
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  Future<void> _resumeReading() async {
+    if (_textPlayer?.document.isEmpty ?? true) return;
+    if (mounted) setState(() => _isSpeaking = true);
+    await _textPlayer?.resume();
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  Future<void> _readPreviousLine() async {
+    if (mounted) setState(() => _isSpeaking = true);
+    await _textPlayer?.previous();
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  Future<void> _readNextLine() async {
+    if (mounted) setState(() => _isSpeaking = true);
+    await _textPlayer?.next();
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  Future<void> _repeatCurrentLine() async {
+    if (mounted) setState(() => _isSpeaking = true);
+    await _textPlayer?.repeat();
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  Future<void> _readFirstLine() async {
+    if (mounted) setState(() => _isSpeaking = true);
+    await _textPlayer?.restart();
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  Future<void> _readLastLine() async {
+    if (mounted) setState(() => _isSpeaking = true);
+    await _textPlayer?.readLast();
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  Future<void> _readLine(int oneBasedLineNumber) async {
+    final total = _textPlayer?.totalSentences ?? 0;
+    if (total == 0) return;
+    final target = oneBasedLineNumber.clamp(1, total);
+    _announce('Reading line $target of $total.');
+    if (mounted) setState(() => _isSpeaking = true);
+    await _textPlayer?.readLine(target);
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  Future<void> _spellCurrentLine() async {
+    if (mounted) setState(() => _isSpeaking = true);
+    await _textPlayer?.spellCurrent();
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  Future<void> _setReadingProfile(ReadingProfile profile) async {
+    HapticFeedback.selectionClick();
+    await _textPlayer?.setProfile(profile);
+    _announce('${profile.label} reading speed selected.');
+  }
+
   Future<void> _jumpToSentence(int index) async {
     HapticFeedback.selectionClick();
-    await _textPlayer?.jumpTo(index);
+    await _readLine(index + 1);
+  }
+
+  Future<void> _showLinePicker() async {
+    final total = _textPlayer?.totalSentences ?? 0;
+    if (total == 0) return;
+    final controller = TextEditingController(
+      text: '${(_textPlayer?.currentIndex ?? 0) + 1}',
+    );
+    String? errorText;
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Go to line'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Enter a line number from 1 to $total.'),
+              const SizedBox(height: AppSpacing.space3),
+              TextField(
+                key: const Key('ocr_line_number_field'),
+                controller: controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: 'Line number',
+                  errorText: errorText,
+                  border: const OutlineInputBorder(),
+                ),
+                onSubmitted: (_) {
+                  final value = int.tryParse(controller.text);
+                  if (value != null && value >= 1 && value <= total) {
+                    Navigator.of(dialogContext).pop(value);
+                  } else {
+                    setDialogState(
+                      () => errorText = 'Enter a number from 1 to $total.',
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const Key('ocr_go_to_line_confirm_button'),
+              onPressed: () {
+                final value = int.tryParse(controller.text);
+                if (value != null && value >= 1 && value <= total) {
+                  Navigator.of(dialogContext).pop(value);
+                } else {
+                  setDialogState(
+                    () => errorText = 'Enter a number from 1 to $total.',
+                  );
+                }
+              },
+              child: const Text('Read Line'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (selected != null && mounted) {
+      await _readLine(selected);
+    }
   }
 
   Future<void> _rescan() async {
@@ -451,12 +589,15 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
       Future<void>.microtask(() {
         if (!mounted) return;
         ref.read(ocrActionTriggerProvider.notifier).clear();
-        
-        final reqId = 'trig_${DateTime.now().millisecondsSinceEpoch}';
-        VoiceDiagnosticLogger.scanRequest(source: 'trigger_${next.name}', scanRequestId: reqId);
-        VoiceDiagnosticLogger.ocrAction(next.name);
 
-        switch (next) {
+        final reqId = 'trig_${DateTime.now().millisecondsSinceEpoch}';
+        VoiceDiagnosticLogger.scanRequest(
+          source: 'trigger_${next.action.name}',
+          scanRequestId: reqId,
+        );
+        VoiceDiagnosticLogger.ocrAction(next.action.name);
+
+        switch (next.action) {
           case OcrActionTrigger.capture:
             unawaited(_captureAndRecognise());
             break;
@@ -472,37 +613,50 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
             }
             break;
           case OcrActionTrigger.pause:
-            unawaited(_textPlayer?.pause());
+            unawaited(_pauseReading());
             break;
           case OcrActionTrigger.resume:
-            unawaited(_textPlayer?.resume());
+            unawaited(_resumeReading());
             break;
           case OcrActionTrigger.previous:
-            unawaited(_textPlayer?.previous());
+            unawaited(_readPreviousLine());
             break;
           case OcrActionTrigger.next:
-            unawaited(_textPlayer?.next());
+            unawaited(_readNextLine());
             break;
           case OcrActionTrigger.repeat:
-            unawaited(_textPlayer?.repeat());
+            unawaited(_repeatCurrentLine());
             break;
           case OcrActionTrigger.restart:
-            unawaited(_textPlayer?.restart());
+            unawaited(_readFirstLine());
+            break;
+          case OcrActionTrigger.last:
+            unawaited(_readLastLine());
+            break;
+          case OcrActionTrigger.goToLine:
+            final lineNumber = next.lineNumber;
+            if (lineNumber != null) unawaited(_readLine(lineNumber));
             break;
           case OcrActionTrigger.spell:
-            unawaited(_textPlayer?.spellCurrent());
+            unawaited(_spellCurrentLine());
             break;
           case OcrActionTrigger.setLearningMode:
-            unawaited(_textPlayer?.setProfile(ReadingProfile.learning));
+            unawaited(_setReadingProfile(ReadingProfile.learning));
             break;
           case OcrActionTrigger.setNormalMode:
-            unawaited(_textPlayer?.setProfile(ReadingProfile.normal));
+            unawaited(_setReadingProfile(ReadingProfile.normal));
             break;
           case OcrActionTrigger.setSkimMode:
-            unawaited(_textPlayer?.setProfile(ReadingProfile.skim));
+            unawaited(_setReadingProfile(ReadingProfile.skim));
             break;
           case OcrActionTrigger.switchCamera:
             unawaited(_switchCamera());
+            break;
+          case OcrActionTrigger.enableTorch:
+            unawaited(_setTorchEnabled(true));
+            break;
+          case OcrActionTrigger.disableTorch:
+            unawaited(_setTorchEnabled(false));
             break;
           case OcrActionTrigger.copyText:
             if (_recognisedText != null && _recognisedText!.isNotEmpty) {
@@ -578,19 +732,24 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
                     isPlaying: _textPlayer?.isPlaying ?? _isSpeaking,
                     onPlayPause: () {
                       if (_textPlayer?.isPlaying ?? _isSpeaking) {
-                        unawaited(_textPlayer?.pause());
-                        _stopSpeaking();
+                        unawaited(_pauseReading());
                       } else {
-                        unawaited(_textPlayer?.resume());
+                        unawaited(_resumeReading());
                       }
                     },
-                    onPrevious: () => unawaited(_textPlayer?.previous()),
-                    onNext: () => unawaited(_textPlayer?.next()),
-                    onRepeat: () => unawaited(_textPlayer?.repeat()),
-                    onSpell: () => unawaited(_textPlayer?.spellCurrent()),
+                    onStop: () => unawaited(_stopSpeaking()),
+                    onPrevious: () => unawaited(_readPreviousLine()),
+                    onNext: () => unawaited(_readNextLine()),
+                    onFirst: () => unawaited(_readFirstLine()),
+                    onLast: () => unawaited(_readLastLine()),
+                    onSelectLine: () => unawaited(_showLinePicker()),
+                    onRepeat: () => unawaited(_repeatCurrentLine()),
+                    onSpell: () => unawaited(_spellCurrentLine()),
                     onSetProfile: (profile) =>
-                        unawaited(_textPlayer?.setProfile(profile)),
+                        unawaited(_setReadingProfile(profile)),
                   ),
+                  const SizedBox(height: AppSpacing.space3),
+                  const _ScannerVoiceShortcutsCard(),
                   const SizedBox(height: AppSpacing.space3),
 
                   // 2. Large Currently-Reading Spotlight Box
@@ -598,10 +757,7 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
                     player: _textPlayer,
                     isSpeaking:
                         _isSpeaking || (_textPlayer?.isPlaying ?? false),
-                    onStop: () async {
-                      await _stopSpeaking();
-                      await _textPlayer?.pause();
-                    },
+                    onStop: () => unawaited(_stopSpeaking()),
                   ),
                   const SizedBox(height: AppSpacing.space3),
 
@@ -1258,7 +1414,7 @@ class _CurrentSentenceSpotlightCard extends StatelessWidget {
 
     return Semantics(
       label:
-          'Currently reading sentence $currentIdx of $total: $currentSentence. Tap Stop to pause.',
+          'Currently reading line $currentIdx of $total: $currentSentence. Tap Stop to stop reading.',
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.space4),
         decoration: BoxDecoration(
@@ -1296,8 +1452,8 @@ class _CurrentSentenceSpotlightCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     isSpeaking
-                        ? 'NOW READING (SENTENCE $currentIdx / $total)'
-                        : 'PAUSED (SENTENCE $currentIdx / $total)',
+                        ? 'NOW READING (LINE $currentIdx / $total)'
+                        : 'READY (LINE $currentIdx / $total)',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
@@ -1417,7 +1573,7 @@ class _DocumentReaderKaraokeCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '$wordCount words • ${sentences.length} sentences',
+                        '$wordCount words • ${sentences.length} reading lines',
                         style: const TextStyle(
                           fontSize: 13,
                           color: AppColors.slate400,
@@ -1459,7 +1615,7 @@ class _DocumentReaderKaraokeCard extends StatelessWidget {
               return Semantics(
                 button: true,
                 label:
-                    'Sentence ${index + 1}: $sentence. ${isCurrent ? "Currently reading." : "Tap to play from here."}',
+                    'Line ${index + 1}: $sentence. ${isCurrent ? "Currently selected." : "Tap to read from here."}',
                 child: Material(
                   color: isCurrent
                       ? AppColors.primary.withValues(alpha: 0.12)
@@ -1602,8 +1758,12 @@ class _PlaybackControlConsole extends StatelessWidget {
     required this.player,
     required this.isPlaying,
     required this.onPlayPause,
+    required this.onStop,
     required this.onPrevious,
     required this.onNext,
+    required this.onFirst,
+    required this.onLast,
+    required this.onSelectLine,
     required this.onRepeat,
     required this.onSpell,
     required this.onSetProfile,
@@ -1612,8 +1772,12 @@ class _PlaybackControlConsole extends StatelessWidget {
   final AccessibleTextPlayer? player;
   final bool isPlaying;
   final VoidCallback onPlayPause;
+  final VoidCallback onStop;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
+  final VoidCallback onFirst;
+  final VoidCallback onLast;
+  final VoidCallback onSelectLine;
   final VoidCallback onRepeat;
   final VoidCallback onSpell;
   final ValueChanged<ReadingProfile> onSetProfile;
@@ -1624,6 +1788,11 @@ class _PlaybackControlConsole extends StatelessWidget {
     final current = (player?.currentIndex ?? 0) + 1;
     final progress = (total > 0) ? (current / total).clamp(0.0, 1.0) : 0.0;
     final currentProfile = player?.profile ?? ReadingProfile.normal;
+    final playLabel = isPlaying
+        ? 'Pause Reading'
+        : player?.status == PlaybackStatus.paused
+        ? 'Resume Reading'
+        : 'Start Reading';
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.space4),
@@ -1635,12 +1804,12 @@ class _PlaybackControlConsole extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header: Sentence Progress & Active Speed Pill
+          // Header: Reading-line progress and active speed.
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Sentence $current of $total',
+                'Line $current of $total',
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1699,10 +1868,10 @@ class _PlaybackControlConsole extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Previous Sentence
+              // Previous reading line.
               Semantics(
                 button: true,
-                label: 'Previous sentence',
+                label: 'Previous line',
                 child: Material(
                   color: AppColors.slate700,
                   shape: const CircleBorder(),
@@ -1726,7 +1895,7 @@ class _PlaybackControlConsole extends StatelessWidget {
               // Hero Play / Pause Button with Cyan Glow
               Semantics(
                 button: true,
-                label: isPlaying ? 'Pause reading' : 'Resume reading',
+                label: playLabel,
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
@@ -1761,10 +1930,10 @@ class _PlaybackControlConsole extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.space4),
 
-              // Next Sentence
+              // Next reading line.
               Semantics(
                 button: true,
-                label: 'Next sentence',
+                label: 'Next line',
                 child: Material(
                   color: AppColors.slate700,
                   shape: const CircleBorder(),
@@ -1785,6 +1954,69 @@ class _PlaybackControlConsole extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: AppSpacing.space2),
+          Text(
+            playLabel,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.onDarkSurface,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.space3),
+
+          // Direct line navigation: first, numbered picker, and last.
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('ocr_first_line_button'),
+                  onPressed: onFirst,
+                  icon: const Icon(Icons.first_page_rounded, size: 19),
+                  label: const FittedBox(child: Text('First')),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.space2),
+              Expanded(
+                flex: 2,
+                child: FilledButton.tonalIcon(
+                  key: const Key('ocr_line_picker_button'),
+                  onPressed: onSelectLine,
+                  icon: const Icon(
+                    Icons.format_list_numbered_rounded,
+                    size: 19,
+                  ),
+                  label: FittedBox(child: Text('Go to Line $current')),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.space2),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('ocr_last_line_button'),
+                  onPressed: onLast,
+                  icon: const Icon(Icons.last_page_rounded, size: 19),
+                  label: const FittedBox(child: Text('Last')),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.space2),
+          Semantics(
+            button: true,
+            label: 'Stop reading and keep the current line selected',
+            child: OutlinedButton.icon(
+              key: const Key('ocr_stop_reading_button'),
+              onPressed: onStop,
+              icon: const Icon(Icons.stop_circle_outlined),
+              label: const Text('Stop Reading'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+                foregroundColor: AppColors.error,
+                side: const BorderSide(color: AppColors.error),
+              ),
+            ),
+          ),
           const SizedBox(height: AppSpacing.space3),
 
           // Secondary Utilities Row: Repeat & Spell Out
@@ -1793,7 +2025,7 @@ class _PlaybackControlConsole extends StatelessWidget {
               Expanded(
                 child: Semantics(
                   button: true,
-                  label: 'Repeat current sentence',
+                  label: 'Repeat current line',
                   child: OutlinedButton.icon(
                     key: const Key('ocr_repeat_button'),
                     onPressed: onRepeat,
@@ -1817,7 +2049,7 @@ class _PlaybackControlConsole extends StatelessWidget {
               Expanded(
                 child: Semantics(
                   button: true,
-                  label: 'Spell out current sentence letter by letter',
+                  label: 'Spell out current line letter by letter',
                   child: OutlinedButton.icon(
                     key: const Key('ocr_spell_button'),
                     onPressed: onSpell,
@@ -1998,6 +2230,60 @@ class _SpeedSegmentPill extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScannerVoiceShortcutsCard extends StatelessWidget {
+  const _ScannerVoiceShortcutsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    const commands =
+        'Pause reading • Start reading • Stop reading • First line • '
+        'Last line • Go to line 5 • Spell out';
+    return Semantics(
+      label: 'Available document voice commands: $commands',
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.space3),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppDimensions.cardRadius),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.45)),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.mic_none_rounded, color: AppColors.primary, size: 22),
+            SizedBox(width: AppSpacing.space2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'VOICE CONTROLS',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    commands,
+                    style: TextStyle(
+                      color: AppColors.slate200,
+                      fontSize: 14,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

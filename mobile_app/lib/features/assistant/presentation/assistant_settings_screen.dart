@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/assistant_session_controller.dart';
 import '../../../app/providers.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../app/voice_kernel/voice_kernel_providers.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/widgets/action_buttons.dart';
 import '../../../core/widgets/app_screen_scaffold.dart';
@@ -17,6 +18,7 @@ class AssistantSettingsScreen extends ConsumerWidget {
     final controller = ref.read(assistantSessionControllerProvider.notifier);
     final state = ref.watch(assistantSessionControllerProvider);
     final appSettings = ref.watch(appSettingsControllerProvider);
+    final voiceState = ref.watch(visionVoiceKernelProvider);
 
     return AppScreenScaffold(
       title: AppStrings.assistantSettingsTitle,
@@ -33,7 +35,7 @@ class AssistantSettingsScreen extends ConsumerWidget {
           contentPadding: EdgeInsets.zero,
           secondary: const Icon(Icons.hearing),
           title: const Text('Listen for “Hey Vision AI”'),
-          subtitle: Text(state.handsFreeStatus),
+          subtitle: Text(voiceState.statusMessage),
           value: appSettings.handsFreeAssistantEnabled,
           onChanged: controller.setHandsFreeEnabled,
         ),

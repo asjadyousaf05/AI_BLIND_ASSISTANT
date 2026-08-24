@@ -43,7 +43,10 @@ void main() {
 
       expect(breaker.recordAndCheck('stop_detection'), isTrue);
       expect(breaker.recordAndCheck('stop_detection'), isTrue);
-      expect(breaker.recordAndCheck('stop_detection'), isFalse); // 3rd repeat trips
+      expect(
+        breaker.recordAndCheck('stop_detection'),
+        isFalse,
+      ); // 3rd repeat trips
       expect(breaker.isTripped, isTrue);
     });
 
@@ -262,48 +265,126 @@ void main() {
       expect(result.isAllowed, isTrue);
     });
 
-    test('rejects self TTS echo when TTS is actively speaking the same word', () {
-      ttsEchoGuard.onTtsStart(
-        utteranceId: 'utt_1',
-        sentenceId: 'sent_1',
-        sentenceText: 'Please stop before crossing the street',
-        generation: 1,
-      );
-      ttsEchoGuard.onTtsRange(
-        utteranceId: 'utt_1',
-        rangeStart: 7,
-        rangeEnd: 11,
-        word: 'stop',
-        generation: 1,
-      );
+    test(
+      'rejects self TTS echo when TTS is actively speaking the same word',
+      () {
+        ttsEchoGuard.onTtsStart(
+          utteranceId: 'utt_1',
+          sentenceId: 'sent_1',
+          sentenceText: 'Please stop before crossing the street',
+          generation: 1,
+        );
+        ttsEchoGuard.onTtsRange(
+          utteranceId: 'utt_1',
+          rangeStart: 7,
+          rangeEnd: 11,
+          word: 'stop',
+          generation: 1,
+        );
 
+        final event = VoiceRecognitionEvent(
+          recognitionId: 'rec_echo',
+          recognizerSessionId: 2,
+          commandSessionId: 5,
+          contextGeneration: 2,
+          transcript: 'stop',
+          timestamp: DateTime.now(),
+          isFinal: true,
+        );
+        const command = VoiceCommand(
+          intent: Silence(),
+          matchScore: 1.0,
+          matchType: VoiceMatchType.exact,
+          normalizedTranscript: 'stop',
+        );
+
+        final result = authorizer.authorize(
+          event: event,
+          command: command,
+          activeContext: VoiceFeatureContext.scannerReading,
+          currentRecognizerSessionId: 2,
+          currentCommandSessionId: 5,
+          currentContextGeneration: 2,
+        );
+
+        expect(result.isAllowed, isFalse);
+        expect(result.rejection, equals(VoiceRejectionReason.selfTtsEcho));
+      },
+    );
+
+    test('rejects nonempty unknown speech as a low-confidence match', () {
       final event = VoiceRecognitionEvent(
-        recognitionId: 'rec_echo',
+        recognitionId: 'rec_noise',
         recognizerSessionId: 2,
         commandSessionId: 5,
         contextGeneration: 2,
-        transcript: 'stop',
+        transcript: 'background television music',
         timestamp: DateTime.now(),
         isFinal: true,
       );
       const command = VoiceCommand(
-        intent: Silence(),
-        matchScore: 1.0,
+        intent: UnknownIntent('background television music'),
+        matchScore: 0,
         matchType: VoiceMatchType.exact,
-        normalizedTranscript: 'stop',
       );
 
       final result = authorizer.authorize(
         event: event,
         command: command,
-        activeContext: VoiceFeatureContext.scannerReading,
+        activeContext: VoiceFeatureContext.home,
         currentRecognizerSessionId: 2,
         currentCommandSessionId: 5,
         currentContextGeneration: 2,
       );
 
       expect(result.isAllowed, isFalse);
-      expect(result.rejection, equals(VoiceRejectionReason.selfTtsEcho));
+      expect(result.rejection, VoiceRejectionReason.lowMatch);
+    });
+
+    test('allows scanner speed and camera controls while reading', () {
+      final speedResult = authorizer.authorize(
+        event: VoiceRecognitionEvent(
+          recognitionId: 'rec_scanner_speed',
+          recognizerSessionId: 2,
+          commandSessionId: 5,
+          contextGeneration: 2,
+          transcript: 'make the reading faster',
+          timestamp: DateTime.now(),
+          isFinal: true,
+        ),
+        command: const VoiceCommand(
+          intent: SetReadingProfile('skim'),
+          matchScore: 1,
+          matchType: VoiceMatchType.exact,
+        ),
+        activeContext: VoiceFeatureContext.scannerReading,
+        currentRecognizerSessionId: 2,
+        currentCommandSessionId: 5,
+        currentContextGeneration: 2,
+      );
+      final cameraResult = authorizer.authorize(
+        event: VoiceRecognitionEvent(
+          recognitionId: 'rec_scanner_camera',
+          recognizerSessionId: 2,
+          commandSessionId: 5,
+          contextGeneration: 2,
+          transcript: 'switch camera',
+          timestamp: DateTime.now(),
+          isFinal: true,
+        ),
+        command: const VoiceCommand(
+          intent: SwitchScannerCamera(),
+          matchScore: 1,
+          matchType: VoiceMatchType.exact,
+        ),
+        activeContext: VoiceFeatureContext.scannerReading,
+        currentRecognizerSessionId: 2,
+        currentCommandSessionId: 5,
+        currentContextGeneration: 2,
+      );
+
+      expect(speedResult.isAllowed, isTrue);
+      expect(cameraResult.isAllowed, isTrue);
     });
   });
 }

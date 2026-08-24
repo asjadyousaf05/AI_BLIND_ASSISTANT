@@ -8,7 +8,9 @@ import 'package:flutter/services.dart';
 /// the platform method `onHandsFreeWake` on the same channel to reuse
 /// the existing hands-free handling pipeline.
 class PorcupineBridge {
-  static const MethodChannel _channel = MethodChannel('ai_blind_assistant/porcupine');
+  static const MethodChannel _channel = MethodChannel(
+    'ai_blind_assistant/porcupine',
+  );
   static final _wakeController = StreamController<void>.broadcast();
 
   static Stream<void> get wakes => _wakeController.stream;

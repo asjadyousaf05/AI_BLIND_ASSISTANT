@@ -38,6 +38,20 @@ class WearableDetectionEvent {
   final WearableFeedbackTarget feedbackTarget;
   final bool piAnnounced;
 
+  String get spokenDescription {
+    final normalizedClassName = className.trim();
+    final label = normalizedClassName.isEmpty
+        ? 'Object'
+        : '${normalizedClassName[0].toUpperCase()}${normalizedClassName.substring(1)}';
+    final proximity = relativeProximity == 'very_close' ? ' very close' : '';
+    final position = switch (direction) {
+      WearableDirection.left => 'on the left',
+      WearableDirection.center => 'ahead',
+      WearableDirection.right => 'on the right',
+    };
+    return '$label$proximity $position';
+  }
+
   Map<String, Object?> toPayload() => {
     'sourceDeviceId': sourceDeviceId,
     'frameSequence': frameSequence,

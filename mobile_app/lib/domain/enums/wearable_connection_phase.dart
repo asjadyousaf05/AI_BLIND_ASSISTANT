@@ -4,6 +4,7 @@ enum WearableConnectionPhase {
   disconnected,
   discovering,
   deviceFound,
+  enrolling,
   pairing,
   paired,
   connecting,
@@ -21,6 +22,7 @@ enum WearableConnectionPhase {
 
   bool get isBusy => switch (this) {
     discovering ||
+    enrolling ||
     pairing ||
     connecting ||
     authenticating ||
@@ -46,6 +48,7 @@ enum WearableConnectionPhase {
     disconnected ||
     discovering ||
     deviceFound ||
+    enrolling ||
     pairing ||
     paired ||
     connecting ||

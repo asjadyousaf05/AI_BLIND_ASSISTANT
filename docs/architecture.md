@@ -1,6 +1,6 @@
 # Architecture
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-08-20
 
 ## Architectural Style
 
@@ -69,18 +69,35 @@ mobile_app/lib/
 ### Assistant Service Boundary
 
 ADR-039 authorizes the in-app assistant, ADR-041 requires phone-local speech,
-and ADR-042 authorizes foreground hands-free wake activation. Flutter owns user
+ADR-042 authorizes foreground hands-free wake activation, ADR-043 requires safe
+two-stage decoding and contextual Smart AI speech, and ADR-044 keeps one
+foreground command session active until an explicit goodbye. Flutter owns user
 intent, confirmation, lifecycle policy, secure pairing credentials, action
 execution, deterministic parsing, and spoken UI output. The bundled Vosk model
 owns foreground wake/command transcription on supported Android releases. Its
-idle recognizer uses a constrained “Hey Vision AI” grammar; after a match, the
-paused recognizer resets to Vosk's default graph for the bounded command or
-confirmation window and returns to the wake grammar after TTS.
+idle recognizer uses a constrained “Hey/Hi Vision AI” grammar and acts only on
+final complete phrases. After a match, the paused recognizer uses a focused
+app-command or scanner grammar and restores that contextual grammar after TTS,
+rejected input, and decoder timeouts. An offline goodbye restores the wake-only
+grammar. Profile changes cancel and join Vosk's
+decoder thread before changing grammar; application code never replaces the
+private recognizer in a running `SpeechService`.
+
 Manual push-to-talk prefers Android's dedicated API 31+ recognizer and falls
-back to Vosk. The optional paired laptop owns unmatched general-conversation
-reasoning and local personal utilities. Common controls bypass models; all
+back to Vosk. `VisionVoiceKernelV3` serializes manual and hands-free microphone
+ownership. On `/assistant`, the same Vosk capture path selects the default
+conversation graph and remains conversational in the visible foreground until
+“bye”/“by” returns to the active offline command session. The optional paired
+laptop owns unmatched
+general-conversation reasoning and local personal utilities. Common controls bypass models; all
 model tool suggestions pass through a strict allow-list before Flutter maps
 them to real controllers and verifies state.
+
+Document Reader voice and visible controls share a typed `OcrActionRequest`
+path into `AccessibleTextPlayer`. Requests may carry a one-based line target;
+the presentation layer clamps it to the loaded document. Reader actions that
+start document speech return silent command results so assistant feedback
+cannot cancel the new utterance on Android's single TTS engine.
 
 The laptop prefers Gemini only when an environment key is configured and falls
 back to Ollama per request. Gemini receives typed/transcribed text only with
@@ -114,8 +131,9 @@ Important mappings:
 | `WearableCredentialRepository` | Android Keystore AES-GCM MethodChannel adapter |
 | `WearableTransport` | `WebSocketWearableTransport` |
 | `WearableRepository` | authenticated WebSocket repository |
+| `WearablePhoneFeedbackService` | app adapter to the single `VisionVoiceKernelV3` TTS owner |
 | `MicrophonePermissionService` | native Android permission MethodChannel |
-| `OnDeviceSpeechRecognitionService` | dedicated Android API 31+ on-device recognizer MethodChannel |
+| `OnDeviceSpeechRecognitionService` | bundled Vosk foreground wake/command/conversation plus dedicated Android API 31+ manual-recognition MethodChannel |
 | `AssistantCredentialRepository` | Android Keystore AES-GCM MethodChannel adapter |
 | `AssistantRepository` | authenticated private-LAN HTTP repository |
 | `SpeechOutputService` | `FlutterTtsSpeechOutputService` |
@@ -136,7 +154,7 @@ string literals.
 | `/home` | current mode and assistance actions |
 | `/modes` | Mobile/Pi mode selection |
 | `/mobile-assistance` | camera, detections, alerts, start/stop/recovery |
-| `/raspberry-pi` | local wearable discovery, pairing, control, and status |
+| `/raspberry-pi` | local wearable discovery, code-free enrollment, control, and status |
 | `/settings` | local sensitivity and feedback settings |
 | `/about-safety` | project limitations and safety boundary |
 | `/help` | accessible quick-start guidance |
@@ -236,7 +254,7 @@ are migrated and removed. The laptop stores token hashes/auth records and only
 explicit notes/reminders/schedules/preferences in local SQLite. General
 conversation-body persistence is disabled by default.
 
-The paired wearable endpoint is stored with its encrypted credential so it can
+The trusted wearable endpoint is stored with its encrypted credential so it can
 be restored after Android process recreation. The secret is encrypted with
 AES-GCM under a non-exportable Android Keystore key and Android backup is
 disabled. The Pi stores a protected derived verifier and bounded configuration.
@@ -281,8 +299,11 @@ scaling remain manual acceptance requirements.
   backgrounded/locked and restarts when the foreground app resumes. Recognition
   is paused during TTS. App-command audio is not uploaded or stored by the app.
 - Raspberry Pi traffic contains compact typed status/detection events; normal
-  operation never streams raw frames. Protocol v1 authentication/integrity does
-  not add confidentiality, so pairing is restricted to a trusted private LAN.
+  operation never streams raw frames. Only signed, stability/cooldown-gated
+  priority events can request phone audio. Protocol v1 authentication/integrity
+  does not add confidentiality. First-phone enrollment is exclusive,
+  private-peer-only trust-on-first-use and is restricted to an
+  owner-controlled private LAN.
 - Assistant environment/database files are ignored. API keys remain backend
   environment secrets and are never packaged in Android.
 - Assistant HTTP is authenticated but unencrypted; restrict port 8765 to a
@@ -312,10 +333,10 @@ manual checks.
 
 The owner explicitly authorized the isolated wearable module in ADR-031. One
 Riverpod `WearableController` owns Flutter intent and lifecycle, while one
-repository owns discovery/pairing/transport/protocol state:
+repository owns discovery/enrollment/transport/protocol state:
 
 ```text
-notConfigured -> discovering -> deviceFound -> pairing -> paired
+notConfigured -> discovering -> deviceFound -> enrolling -> paired
   -> connecting -> authenticating -> connected
   -> starting -> running <-> paused -> stopping -> connected
 ```
@@ -326,13 +347,17 @@ correlated acknowledgements. Heartbeats and a bounded exponential retry policy
 detect and recover temporary loss without a tight retry loop.
 
 Backgrounding closes only the phone transport; it does not send a stop command.
-The Pi service owns its running camera/model session and local feedback, so
-essential assistance continues without the phone. On resume the phone restores
-the desired authenticated connection and resolves settings by version before
-accepting telemetry.
+The Pi service owns its running camera/model session. An authenticated connected
+phone is the preferred speech target; priority events are routed through the
+same voice kernel that coordinates assistant TTS and microphone state. When the
+phone disconnects or backgrounds, Pi-local speech becomes the fallback so the
+Pi session can continue. On resume the phone restores the desired authenticated
+connection and resolves settings by version before accepting telemetry.
 
 The Pi service loads one Open Images V7 NCNN model, uses a single camera with a
-latest-frame bounded queue, and never installs PyTorch. Its component adapters
-are injected so the same protocol/state path runs with a hardware-free
-simulator. Full details are in [wearable-mode.md](wearable-mode.md) and
+latest-frame bounded queue, and never installs PyTorch. Its feedback policy
+emits ordinary detections as silent telemetry and at most one bounded priority
+target after stability, cooldown and rate gates. Its component adapters are
+injected so the same protocol/state path runs with a hardware-free simulator.
+Full details are in [wearable-mode.md](wearable-mode.md) and
 [wearable-protocol.md](wearable-protocol.md).

@@ -60,12 +60,9 @@ extension VoiceRejectionReasonX on VoiceRejectionReason {
       'That command is not available on this screen.',
     VoiceRejectionReason.actionNotAllowed =>
       'That action is not allowed right now.',
-    VoiceRejectionReason.ambiguous =>
-      'Please be more specific.',
-    VoiceRejectionReason.lowMatch =>
-      'Please repeat.',
-    VoiceRejectionReason.assistantSuspended =>
-      'The voice assistant is paused.',
+    VoiceRejectionReason.ambiguous => 'Please be more specific.',
+    VoiceRejectionReason.lowMatch => 'Please repeat.',
+    VoiceRejectionReason.assistantSuspended => 'The voice assistant is paused.',
     _ => '',
   };
 }

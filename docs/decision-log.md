@@ -515,7 +515,7 @@
 
 - Date: 2026-08-14
 - Status: Accepted; supersedes the no-wake portion of ADR-039 and the
-  service-only dependency in ADR-041
+  service-only dependency in ADR-041; decoder details refined by ADR-043
 - Context: The target TECNO BG6 has no installed dedicated on-device speech
   service, and the owner requires a blind user to operate the already-open app
   by calling the assistant without touching the screen.
@@ -526,8 +526,7 @@
   foreground “Hey Vision AI” wake and command listener. Restrict the idle
   decoder to a small brand-specific grammar with `[unk]`, then switch to the
   default full-vocabulary graph only for the bounded command/confirmation
-  window. Check settled partial hypotheses and suppress duplicate result/final
-  callbacks. Keep manual
+  window. Suppress duplicate result/final callbacks. Keep manual
   voice as an alternative, preferring the dedicated Android recognizer and
   falling back to Vosk. Pause recognition during TTS and confirmations; accept
   confirmation/cancellation by voice; serialize background/resume operations;
@@ -548,3 +547,190 @@
   `mobile_app/lib/app/assistant_session_controller.dart`, `docs/assistant.md`
 - Related requirements: FR-013 through FR-015, NFR-OFFLINE-002,
   NFR-SEC-003, NFR-REL-001, BR-003
+
+## ADR-043: Use Safe Two-Stage Vosk Decoding and Contextual Smart AI Speech
+
+- Date: 2026-08-20
+- Status: Accepted; refines ADR-042
+- Context: The owner reported wrong transcripts, noise sensitivity, missing
+  semantic command variants, Smart AI voice inconsistency, and unexpected app
+  exits. Inspection found that any settled nonempty partial could previously
+  activate hands-free mode and that profile changes replaced a private final
+  Vosk recognizer through reflection while its audio thread could still decode.
+- Options considered: send raw audio to laptop faster-whisper; add a large
+  on-device Whisper runtime; use a proprietary system-assistant/wake SDK; keep
+  Vosk but separate wake, app-command, scanner, and conversation graphs with a
+  single serialized microphone owner.
+- Decision: Keep raw audio on the phone and retain bundled Vosk for the visible
+  foreground app. Idle decoding uses only complete branded wake phrases and
+  acts on final results, never generic partial hypotheses. After acknowledgement,
+  a constrained app/scanner grammar handles deterministic commands. Decoder
+  changes call `SpeechService.cancel()` to interrupt and join the worker before
+  resetting grammar and restarting the same service; the private recognizer is
+  never reflected into or hot-swapped. Retain supported AEC/NS/AGC effects.
+  `VisionVoiceKernelV3` serializes hands-free and push-to-talk microphone use.
+  On the Smart AI route, use the same Vosk/AudioRecord path with the default
+  conversation graph; local commands retain priority, only unmatched transcript
+  text reaches the paired backend, and “bye”/“by” restores offline wake mode.
+  Faster-whisper remains a retained laptop service and is not used by the
+  current mobile voice path because that would require raw-audio transport or a
+  separately validated on-device runtime.
+- Rationale: This removes the two identified false-activation/native-race
+  mechanisms while preserving offline app control, privacy, and the existing
+  low-end Android deployment. It also gives Smart AI one consistent foreground
+  capture lifecycle without treating an LLM as an app-control router.
+- Consequences: This is not Siri/Google Assistant parity or a system-wide wake
+  service. The bundled English model, grammar, device microphones, and vendor
+  audio effects limit accuracy. Physical accent/noise, repeated profile-change,
+  TalkBack, battery, thermal, and crash-log acceptance remain mandatory.
+- Related files:
+  `mobile_app/android/app/src/main/kotlin/com/example/ai_blind_assistant/OnDeviceSpeechRecognizerHandler.kt`,
+  `mobile_app/android/app/src/main/kotlin/com/example/ai_blind_assistant/VisionAiSpeechGrammar.kt`,
+  `mobile_app/lib/app/voice_kernel/vision_voice_kernel_v3.dart`,
+  `mobile_app/lib/app/assistant_session_controller.dart`, `docs/assistant.md`
+- Related requirements: FR-013 through FR-019, NFR-OFFLINE-002, NFR-SEC-003,
+  NFR-REL-001, NFR-MAINT-001, BR-003
+
+## ADR-044: Keep One Foreground Command Session Active Until Goodbye
+
+- Date: 2026-08-20
+- Status: Accepted; refines the bounded one-command window in ADR-042/043
+- Context: Owner testing confirmed clear recognition but found wake-before-every-
+  command interaction unprofessional. The Document Scanner's Dart resolver also
+  contained substantially more semantic aliases than its constrained native
+  Vosk graph, so many valid UI actions could never reach the resolver.
+- Options considered: require wake for every command; use an arbitrary inactivity
+  timeout; leave the full conversation graph active; keep a focused foreground
+  command graph active until an explicit goodbye.
+- Decision: One complete branded wake opens an explicit foreground command
+  session. Resume the contextual app/scanner graph after commands, feedback,
+  rejected input, and bounded decoder timeouts. Only an offline goodbye (or the
+  user disabling/stopping hands-free mode) ends the session and restores the
+  wake-only graph. Preserve Smart AI “bye” as a return to the active offline
+  session. Keep background/lock suspension and final-only wake activation.
+  Expand the Scanner graph to the deterministic capture, playback, speed,
+  spelling, copy, camera, torch, navigation, and exit actions already exposed
+  by the native Flutter UI, including bounded polite phrase variants.
+- Rationale: This provides natural follow-up control without exposing an open
+  full-vocabulary app-control path. Contextual grammars, `[unk]`, deterministic
+  authorization, TTS echo rejection, and explicit goodbye retain safety bounds.
+- Consequences: The active session listens longer and therefore requires a
+  false-command/noise and battery matrix on the target phone. It remains an
+  in-app foreground assistant, not background or OS-wide voice control.
+- Related files:
+  `mobile_app/lib/app/voice_kernel/vision_voice_kernel_v3.dart`,
+  `mobile_app/android/app/src/main/kotlin/com/example/ai_blind_assistant/VisionAiSpeechGrammar.kt`,
+  `mobile_app/android/app/src/main/kotlin/com/example/ai_blind_assistant/OnDeviceSpeechRecognizerHandler.kt`,
+  `mobile_app/lib/features/ocr_scanner/presentation/ocr_scanner_screen.dart`
+- Related requirements: FR-013 through FR-015, FR-019, NFR-OFFLINE-002,
+  NFR-REL-001, NFR-MAINT-001, BR-003
+
+## ADR-045: Unify Document Reader Voice and Touch Actions
+
+- Date: 2026-08-20
+- Status: Accepted
+- Context: Physical use showed that recognized reader commands could still fail
+  because the UI Pause path also called Stop, stopped playback changed the voice
+  context to Scanner Capture, command-result TTS cancelled newly started reader
+  TTS, and final/numbered-line actions did not exist.
+- Options considered: add more phrases only; maintain separate voice/UI paths;
+  use the optional AI backend for reader interpretation; route every reader
+  action through one typed local player request path.
+- Decision: Keep reader control deterministic and offline. Use typed
+  `OcrActionRequest` events, including an optional one-based line number, and
+  execute both voice and visible controls through `AccessibleTextPlayer`. Keep a
+  loaded document in Scanner Reading context after Stop. Do not speak separate
+  assistant feedback for actions that immediately start document TTS. Treat
+  “last line” as the final line, expose first/final/direct-line domain intents,
+  and spell the complete selected line. Keep numeric speech bounded to 1-100 in
+  the focused native graph while accepting 1-999 in deterministic Dart input.
+- Rationale: One action path prevents behavior drift, avoids single-engine TTS
+  cancellation, supports predictable TalkBack controls, and retains the focused
+  grammar's lower-noise boundary.
+- Consequences: OCR reading “lines” remain normalized sentence-like reading
+  units rather than exact photographed layout rows. Physical multi-line,
+  TalkBack, large-text, noise, and grammar-switch acceptance remains required.
+- Related files: `mobile_app/lib/domain/services/accessible_text_player.dart`,
+  `mobile_app/lib/domain/enums/voice_intent.dart`,
+  `mobile_app/lib/app/providers.dart`,
+  `mobile_app/lib/app/voice_kernel/command_executor.dart`,
+  `mobile_app/lib/domain/services/intelligent_intent_resolver.dart`,
+  `mobile_app/lib/features/ocr_scanner/presentation/ocr_scanner_screen.dart`,
+  `mobile_app/android/app/src/main/kotlin/com/example/ai_blind_assistant/VisionAiSpeechGrammar.kt`
+- Related requirements: FR-013, FR-015, NFR-ACC-001, NFR-ACC-002,
+  NFR-OFFLINE-002, NFR-MAINT-001, NFR-MAINT-002
+
+## ADR-046: Prefer Authenticated Phone Audio for Wearable Priority Alerts
+
+- Date: 2026-08-20
+- Status: Accepted; supersedes the default-feedback-owner portion of ADR-033
+- Context: The owner requested a Raspberry Pi and phone on the same local
+  network, one Connect action that starts detection, and all detection audio
+  through the phone speaker. Uncommitted work attempted to achieve one-click
+  setup by embedding a Pi SSH password and adding an unauthenticated manual-IP
+  WebSocket path.
+- Options considered: keep Pi-only speech; stream frames to the phone; package
+  SSH credentials and bypass pairing; send only bounded authenticated priority
+  events to the phone while retaining Pi speech as disconnect fallback.
+- Decision: Configure the UI for `10.141.17.148:8765`, retain mDNS/manual
+  private-host fallback, and require the existing short-code/HMAC/Keystore
+  pairing. After the one-time pair, `Connect & Start Detection` authenticates,
+  synchronizes settings, and starts assistance in one action. The Pi keeps all
+  camera/model inference local. Its stability/cooldown/rate policy targets the
+  authenticated connected phone for priority audio; Flutter routes that event
+  through `VisionVoiceKernelV3`, the single microphone/TTS owner. Pi-local
+  speech is the fallback after phone disconnect. Remove the SSH dependency,
+  embedded login password, and unauthenticated manual endpoint path.
+- Rationale: This provides the requested phone-speaker experience without
+  camera transport, duplicate speech, credential exposure, or loss of protocol
+  authentication. Reusing the voice kernel coordinates recognition and TTS.
+- Consequences: First use cannot truthfully be one tap because the owner must
+  enter a fresh local pairing code. Later sessions are one action. Phone audio
+  requires a live authenticated foreground connection; background/disconnect
+  uses Pi speech if available. “Same internet” is insufficient when LAN client
+  isolation or different routed subnets prevent peer access. Physical Pi,
+  phone-speaker, TalkBack, reconnect and performance acceptance remain open.
+- Related files: `mobile_app/lib/app/wearable_controller.dart`,
+  `mobile_app/lib/app/wearable_phone_feedback_service.dart`,
+  `mobile_app/lib/features/raspberry_pi/presentation/raspberry_pi_screen.dart`,
+  `raspberry_pi/src/ai_blind_pi/feedback.py`,
+  `raspberry_pi/src/ai_blind_pi/service.py`, `docs/wearable-protocol.md`
+- Related requirements: FR-008, FR-010, FR-011, FR-017, NFR-OFFLINE-001,
+  NFR-SEC-001 through NFR-SEC-004, NFR-REL-001, NFR-MAINT-001
+
+## ADR-047: Exclusive Code-Free First-Phone Enrollment
+
+- Date: 2026-08-20
+- Status: Accepted; supersedes ADR-046 only for the first-use pairing UX
+- Context: The owner requested connection without any displayed pairing code
+  and supplied a Linux login. Packaging or retaining that login on Android
+  would expose a device secret; removing authentication entirely would allow
+  arbitrary LAN control.
+- Options considered: embed SSH username/password; accept unauthenticated
+  commands; retain manual short codes; use exclusive trust-on-first-use that
+  issues a random revocable application credential to the first phone only.
+- Decision: The production UI exposes one `Connect & Start Detection` action.
+  An explicitly enabled, unclaimed Pi accepts one atomic
+  `enrollment_request` from a private/loopback peer, returns a random credential
+  once, and immediately closes enrollment while any credential remains active.
+  Android protects the credential with its existing Keystore adapter; every
+  later session retains nonce-bound HMAC authentication, replay controls and
+  signed commands. Linux login credentials never enter Flutter source, Android
+  storage, protocol messages, tests, logs, or tracked documentation. Legacy
+  short-code protocol support remains non-UI compatibility only.
+- Rationale: This meets the no-code interaction request while preserving
+  authenticated control and avoiding reusable administrator credentials in a
+  reverse-engineerable APK.
+- Consequences: First enrollment is trust-on-first-use, so it must occur on an
+  isolated owner-controlled router/hotspot. A different LAN client could claim
+  an unclaimed Pi first. Lost/offline phone credentials require the owner to run
+  local `ai-blind-pi revoke all` before reenrollment. The phone and Pi must still
+  be on one reachable non-isolated LAN; this does not solve the current subnet
+  blocker.
+- Related files: `mobile_app/lib/infrastructure/networking/`,
+  `mobile_app/lib/features/raspberry_pi/presentation/raspberry_pi_screen.dart`,
+  `raspberry_pi/src/ai_blind_pi/security.py`,
+  `raspberry_pi/src/ai_blind_pi/websocket_server.py`,
+  `raspberry_pi/config/wearable.env.example`
+- Related requirements: FR-010, FR-011, FR-017, NFR-OFFLINE-001,
+  NFR-SEC-002, NFR-SEC-004, NFR-MAINT-001, NFR-MAINT-002

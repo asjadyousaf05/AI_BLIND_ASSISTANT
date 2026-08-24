@@ -40,10 +40,6 @@ abstract final class AppKeys {
   static const raspberryPiUseManualAddressButton = Key(
     'raspberry_pi_use_manual_address_button',
   );
-  static const raspberryPiPairingCodeField = Key(
-    'raspberry_pi_pairing_code_field',
-  );
-  static const raspberryPiPairButton = Key('raspberry_pi_pair_button');
   static const raspberryPiDisconnectButton = Key(
     'raspberry_pi_disconnect_button',
   );

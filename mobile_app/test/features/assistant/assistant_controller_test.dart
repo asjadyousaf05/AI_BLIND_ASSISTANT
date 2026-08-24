@@ -7,6 +7,7 @@ import 'package:ai_blind_assistant/app/assistance_controller.dart';
 import 'package:ai_blind_assistant/app/assistant_providers.dart';
 import 'package:ai_blind_assistant/app/assistant_session_controller.dart';
 import 'package:ai_blind_assistant/app/providers.dart';
+import 'package:ai_blind_assistant/app/voice_kernel/voice_kernel_providers.dart';
 import 'package:ai_blind_assistant/domain/entities/assistant_credential.dart';
 import 'package:ai_blind_assistant/domain/entities/assistant_message.dart';
 import 'package:ai_blind_assistant/domain/entities/assistant_response.dart';
@@ -16,6 +17,8 @@ import 'package:ai_blind_assistant/domain/enums/assistant_session_state.dart';
 import 'package:ai_blind_assistant/domain/enums/detection_sensitivity.dart';
 import 'package:ai_blind_assistant/domain/enums/microphone_permission_status.dart';
 import 'package:ai_blind_assistant/domain/enums/mobile_assistance_state.dart';
+import 'package:ai_blind_assistant/domain/enums/voice_feature_context.dart';
+import 'package:ai_blind_assistant/domain/enums/voice_intent.dart';
 import 'package:ai_blind_assistant/domain/repositories/assistant_credential_repository.dart';
 import 'package:ai_blind_assistant/domain/repositories/assistant_repository.dart';
 import 'package:ai_blind_assistant/domain/services/microphone_permission_service.dart';
@@ -65,7 +68,6 @@ class FakeAssistantRepository implements AssistantRepository {
     required String backendUrl,
     required String pairingCode,
   }) async {
-    textQueryCount += 1;
     if (pairingCode == 'BADCODE') {
       throw const AssistantAuthException('Invalid pairing code');
     }
@@ -85,6 +87,7 @@ class FakeAssistantRepository implements AssistantRepository {
     required String query,
     required List<AssistantMessage> conversationHistory,
   }) async {
+    textQueryCount += 1;
     if (!isReachable) {
       throw const AssistantNetworkException('Backend unreachable');
     }
@@ -168,6 +171,7 @@ class FakeOnDeviceSpeechRecognitionService
   int handsFreeStartCount = 0;
   int handsFreeResumeCount = 0;
   bool acceptNextCommand = false;
+  String? recognitionProfile;
   Completer<void>? stopHandsFreeGate;
   String transcript = 'assistant connection status';
   OnDeviceSpeechRecognitionException? startError;
@@ -236,7 +240,9 @@ class FakeOnDeviceSpeechRecognitionService
   }
 
   @override
-  Future<void> setRecognitionProfile(String profile) async {}
+  Future<void> setRecognitionProfile(String profile) async {
+    recognitionProfile = profile;
+  }
 
   @override
   Future<void> dispose() async {
@@ -443,10 +449,7 @@ void main() {
       expect(state.sessionState, AssistantSessionState.completed);
       expect(state.isPaired, isFalse);
       expect(state.conversationHistory.last.text, contains('not paired'));
-      expect(
-        state.conversationHistory.last.text,
-        contains('not paired'),
-      );
+      expect(state.conversationHistory.last.text, contains('not paired'));
     });
 
     test('general conversation still asks for the optional backend', () async {
@@ -462,7 +465,130 @@ void main() {
     });
   });
 
+  group('VisionVoiceKernelV3 — persistent foreground session', () {
+    Future<void> settleVoice() =>
+        Future<void>.delayed(const Duration(milliseconds: 25));
 
+    test(
+      'one wake keeps accepting commands and timeout does not sleep',
+      () async {
+        container.read(visionVoiceKernelProvider);
+        await settleVoice();
+
+        fakeSpeechRecognizer.handsFreeEventController.add(
+          const HandsFreeSpeechEvent(type: HandsFreeSpeechEventType.wake),
+        );
+        await settleVoice();
+
+        expect(
+          container.read(visionVoiceKernelProvider).isCommandSessionActive,
+          isTrue,
+        );
+        expect(fakeSpeechRecognizer.acceptNextCommand, isTrue);
+
+        fakeSpeechRecognizer.handsFreeEventController.add(
+          const HandsFreeSpeechEvent(
+            type: HandsFreeSpeechEventType.command,
+            transcript: 'what time is it',
+          ),
+        );
+        await settleVoice();
+
+        expect(
+          container.read(visionVoiceKernelProvider).isCommandSessionActive,
+          isTrue,
+        );
+        expect(fakeSpeechRecognizer.acceptNextCommand, isTrue);
+
+        fakeSpeechRecognizer.handsFreeEventController.add(
+          const HandsFreeSpeechEvent(type: HandsFreeSpeechEventType.timeout),
+        );
+        await settleVoice();
+
+        expect(
+          container.read(visionVoiceKernelProvider).isCommandSessionActive,
+          isTrue,
+        );
+        expect(fakeSpeechRecognizer.acceptNextCommand, isTrue);
+      },
+    );
+
+    test('scanner commands remain active until goodbye', () async {
+      final kernel = container.read(visionVoiceKernelProvider.notifier);
+      await settleVoice();
+      fakeSpeechRecognizer.handsFreeEventController.add(
+        const HandsFreeSpeechEvent(type: HandsFreeSpeechEventType.wake),
+      );
+      await settleVoice();
+
+      kernel.setFeatureContext(VoiceFeatureContext.scannerReading);
+      await settleVoice();
+      expect(fakeSpeechRecognizer.recognitionProfile, 'scanner_commands');
+
+      fakeSpeechRecognizer.handsFreeEventController.add(
+        const HandsFreeSpeechEvent(
+          type: HandsFreeSpeechEventType.command,
+          transcript: 'make the reading faster',
+        ),
+      );
+      await settleVoice();
+
+      var voiceState = container.read(visionVoiceKernelProvider);
+      expect(voiceState.lastResolvedCommand?.intent, isA<SetReadingProfile>());
+      expect(voiceState.isCommandSessionActive, isTrue);
+      expect(fakeSpeechRecognizer.acceptNextCommand, isTrue);
+
+      fakeSpeechRecognizer.handsFreeEventController.add(
+        const HandsFreeSpeechEvent(
+          type: HandsFreeSpeechEventType.command,
+          transcript: 'repeat this sentence',
+        ),
+      );
+      await settleVoice();
+
+      voiceState = container.read(visionVoiceKernelProvider);
+      expect(voiceState.lastResolvedCommand?.intent, isA<ReadingRepeat>());
+      expect(voiceState.isCommandSessionActive, isTrue);
+
+      fakeSpeechRecognizer.handsFreeEventController.add(
+        const HandsFreeSpeechEvent(
+          type: HandsFreeSpeechEventType.command,
+          transcript: 'goodbye',
+        ),
+      );
+      await settleVoice();
+
+      voiceState = container.read(visionVoiceKernelProvider);
+      expect(voiceState.isCommandSessionActive, isFalse);
+      expect(fakeSpeechRecognizer.acceptNextCommand, isFalse);
+    });
+
+    test(
+      'bye leaves Smart AI but preserves the offline command session',
+      () async {
+        final kernel = container.read(visionVoiceKernelProvider.notifier);
+        await settleVoice();
+        fakeSpeechRecognizer.handsFreeEventController.add(
+          const HandsFreeSpeechEvent(type: HandsFreeSpeechEventType.wake),
+        );
+        await settleVoice();
+        kernel.setFeatureContext(VoiceFeatureContext.smartAi);
+
+        fakeSpeechRecognizer.handsFreeEventController.add(
+          const HandsFreeSpeechEvent(
+            type: HandsFreeSpeechEventType.command,
+            transcript: 'bye',
+          ),
+        );
+        await settleVoice();
+
+        final voiceState = container.read(visionVoiceKernelProvider);
+        expect(voiceState.activeContext, VoiceFeatureContext.unknown);
+        expect(voiceState.isCommandSessionActive, isTrue);
+        expect(fakeSpeechRecognizer.acceptNextCommand, isTrue);
+      },
+    );
+  });
 
   group('AssistantSessionController — Text Query', () {
     setUp(() async {
@@ -491,6 +617,83 @@ void main() {
       );
       expect(state.conversationHistory.last.text, contains('Echo'));
     });
+
+    test(
+      'wake-driven Smart AI conversation uses the backend text path',
+      () async {
+        final controller = container.read(
+          assistantSessionControllerProvider.notifier,
+        );
+
+        await controller.sendConversationQuery(
+          'How do guide dogs learn routes?',
+        );
+
+        final state = container.read(assistantSessionControllerProvider);
+        expect(state.sessionState, AssistantSessionState.completed);
+        expect(state.conversationHistory.first.text, contains('guide dogs'));
+        expect(state.conversationHistory.last.text, contains('Echo'));
+        expect(fakeAssistantRepo.textQueryCount, 1);
+        expect(
+          fakeSpeechRecognizer.handsFreeStartCount,
+          greaterThanOrEqualTo(1),
+        );
+        expect(fakeSpeechRecognizer.acceptNextCommand, isTrue);
+      },
+    );
+
+    test(
+      'Smart AI hands-free event routes unmatched speech to backend',
+      () async {
+        final kernel = container.read(visionVoiceKernelProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+        kernel.setFeatureContext(VoiceFeatureContext.smartAi);
+
+        fakeSpeechRecognizer.handsFreeEventController.add(
+          const HandsFreeSpeechEvent(
+            type: HandsFreeSpeechEventType.command,
+            transcript: 'Explain how guide dogs learn routes',
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(fakeAssistantRepo.textQueryCount, 1);
+        expect(
+          container
+              .read(assistantSessionControllerProvider)
+              .conversationHistory
+              .last
+              .text,
+          contains('Echo'),
+        );
+        expect(fakeSpeechRecognizer.acceptNextCommand, isTrue);
+      },
+    );
+
+    test(
+      'Smart AI hands-free ignores low-information noise transcript',
+      () async {
+        final kernel = container.read(visionVoiceKernelProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+        kernel.setFeatureContext(VoiceFeatureContext.smartAi);
+
+        fakeSpeechRecognizer.handsFreeEventController.add(
+          const HandsFreeSpeechEvent(
+            type: HandsFreeSpeechEventType.command,
+            transcript: 'the the',
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(fakeAssistantRepo.textQueryCount, 0);
+        expect(
+          container
+              .read(assistantSessionControllerProvider)
+              .conversationHistory,
+          isEmpty,
+        );
+      },
+    );
 
     test('sendTextQuery fails gracefully when laptop is unreachable', () async {
       fakeAssistantRepo.isReachable = false;
@@ -620,12 +823,9 @@ void main() {
 
       await controller.startListening();
       await controller.stopListeningAndSubmit();
-      
+
       final state = container.read(assistantSessionControllerProvider);
-      expect(
-        state.sessionState,
-        AssistantSessionState.completed,
-      );
+      expect(state.sessionState, AssistantSessionState.completed);
 
       expect(
         container
@@ -701,6 +901,4 @@ void main() {
       expect(state.sessionState, equals(AssistantSessionState.cancelled));
     });
   });
-
-
 }

@@ -1,74 +1,84 @@
 # Project Status
 
-Last updated: 2026-08-18
+Last updated: 2026-08-20
 
 ## Overview
 
 | Field | Status |
 |---|---|
-| Current work | Module 52 VisionVoiceKernelV3 physical device bug fixes |
-| Overall state | Fixed TTS race conditions on reading resumption and resolved state drop during voice confirmation; 350 Flutter tests passed; 0 analyze issues; single-word 'Vision' wake phrase active |
+| Current work | Module 57 exclusive code-free Raspberry Pi enrollment |
+| Overall state | Cross-stack implementation/release verified; physical Pi connection blocked by endpoint/network state |
 | Mobile stack | Flutter 3.44.5 / Dart 3.12.2, Android min SDK 24, target 36 |
-| Architecture | Feature-first layers, Riverpod DI/state, VisionVoiceKernelV3 voice layer, centralized named routes |
-| Mobile assistance | CameraX, bundled YOLOv8n LiteRT, local TTS, bounded haptics |
-| Wearable assistance | Authenticated local WebSocket v1, Pi NCNN/Picamera2/espeak-ng |
-| Assistant controls | State-machine-driven VisionVoiceKernelV3, on-device Vosk, shared CommandExecutor |
-| AI selection | Gemini first when configured; automatic local Ollama fallback |
-| Active provider on this host | Ollama `llama3.2:3b`; Gemini key not configured |
-| Release | `1.5.0`, split code `2050`, ARM64 |
+| Architecture | Feature-first layers, Riverpod DI/state, centralized named routes and one voice/TTS owner |
+| Mobile assistance | CameraX, bundled YOLO/LiteRT, local TTS, bounded haptics |
+| Wearable assistance | Exclusive first-phone enrollment, authenticated local WebSocket v1, Pi NCNN/Picamera2, phone-priority TTS with Pi fallback |
+| Offline voice | One strict branded wake per foreground session, focused contextual grammars until goodbye |
+| Smart AI | Same phone-local Vosk input; unmatched transcript text to paired Gemini-first/Ollama-fallback backend |
+| Release metadata | `1.4.2+2042`; ARM64 installed on TECNO BG6 as ABI-adjusted code `4042` |
 
 ## Implemented Capabilities
 
-Mobile and Wearable modes remain independent, local assistive workflows. The
-assistant can read status and control sensitivity, feedback, accessibility,
-Mobile Mode, and Raspberry Pi Mode through real Riverpod controllers. Common
-control phrases use deterministic parsing. Model-proposed actions must match a
-strict allow-list and validated argument schema; sensitive actions wait for
-explicit confirmation.
+Wearable Mode is configured for `10.141.17.148:8765`, retains mDNS/manual
+private-host discovery, and now exposes no Pi pairing-code field. On first use,
+one `Connect & Start Detection` action sends an exclusive enrollment request,
+receives a random application credential, stores it through Android Keystore,
+authenticates, synchronizes settings, and starts the Pi assistance pipeline.
+Later sessions reuse the credential automatically.
 
-Typed app-control phrases are parsed before any credential or network check and
-execute entirely on the phone. Foreground hands-free speech uses the Vosk model
-bundled in the APK; manual voice prefers Android's dedicated on-device service
-and falls back to Vosk. The idle listener uses a focused wake grammar and
-switches to the full Vosk graph only after acknowledgement. Both use the same
-deterministic phone route. Gemini and Ollama are reserved for unmatched general
-conversation.
+The Pi permits this operation only when first-client enrollment is explicitly
+enabled, the peer is private/loopback, and no non-revoked phone credential
+exists. Enrollment is atomic and then closes. All later messages retain
+nonce-bound HMAC authentication, integrity, replay protection and revocation.
+Linux login credentials are not used by the app and no SSH code is packaged.
+This first-use mechanism is trust-on-first-use and must run on an
+owner-controlled private network.
 
-Voice recognition is bounded to the open foreground app and stops while locked
-or backgrounded. App-command raw audio stays in phone-local recognizer memory
-and is not stored or uploaded by the app.
-Gemini receives only unmatched typed/transcribed conversation text and
-conversation context after disclosure; it receives no camera frame or raw
-audio. Without a Gemini key, optional conversation reasoning stays on the
-laptop through Ollama. The core camera pipeline never depends on either AI
-provider or the internet.
+The Pi keeps camera capture and NCNN inference local. Raw frames never leave
+the Pi. Stability/cooldown-gated priority events target the authenticated phone
+and Flutter speaks relative-position alerts through `VisionVoiceKernelV3`; Pi
+speech remains the disconnect fallback. Ordinary telemetry stays silent.
+
+The foreground offline assistant and Document Scanner capabilities from
+Modules 53-55 remain present and unchanged by Module 57.
 
 ## Latest Evidence
 
-- `flutter analyze`: no issues.
-- `flutter test`: 350 passed tests.
-- Fixed a TTS synchronization bug in the Document Scanner where overlapping speech calls caused the sentence loop to silently skip to the end on resumption.
-- Added explicit confirmation intents (`ConfirmYes`/`ConfirmNo`) and decoupled the push-to-talk locking during `awaitingConfirmation`, allowing successful manual and wake-word voice cancellation.
-- USB update installation passed on TECNO BG6, Android 13/API 33, ARM64.
+- Flutter analyzer: 0 findings; full Flutter suite: 319 passed, 0 failed,
+  including Flutter against an actual Python simulator process.
+- Pi Ruff: clean; Pi suite: 15 passed, 46 Python 3.14 upstream warnings.
+- Android `:app:testDebugUnitTest`: build successful.
+- Release splits: 113.4 MB ARM, 125.8 MB ARM64, 130.7 MB x86_64.
+- ARM64 SHA-256:
+  `a4ab50e4ef27c73104eec96c11854dbb088a5e407ecf175eb87d8abbf6a8717c`.
+- TECNO BG6: data-preserving release install succeeded as `1.4.2` / code
+  `4042`; process alive/focused and no app-scoped fatal marker found.
+- Pi endpoint retry: phone ping 2/2 lost; Mac TCP 22 and 8765 timed out.
+- Network mismatch remains: phone Wi-Fi `10.141.10.93/21`; supplied Pi
+  `10.141.17.148` is outside that local `/21`.
 
 ## Open Acceptance and Limitations
 
 | Gate | Required evidence |
 |---|---|
-| Android voice | real-speaker wake/command/spoken-confirm accuracy, permission denial/revocation, TTS/audio focus, repeated lifecycle, battery/thermal |
-| Accessibility | TalkBack focus/order/live announcements, 2x text, confirmation controls |
-| Providers | real Gemini key success and forced-failure Ollama fallback on the phone |
-| App controls | sensitivity/settings/Mobile/Pi actions and truthful failure states |
-| Mobile safety | camera boxes, TTS/haptics, airplane mode, lifecycle, thermal/performance |
-| Raspberry Pi | deployment, discovery, pairing, NCNN/camera/audio, reconnect/reboot/IP change |
-| Transport | trusted-LAN-only review; assistant HTTP is authenticated but not encrypted |
+| Pi reachability | Pi and phone on one non-isolated LAN; current IP and TCP 8765 reachable |
+| Pi deployment | matching Module 57 service/config/model installed; NCNN validation and two OV5647 sessions |
+| Exclusive enrollment | first phone succeeds, simultaneous/second phone rejected, revoke-all recovery observed physically |
+| Wearable phone audio | Connect & Start, priority event, phone utterance, media-volume/TTS failure and disconnect fallback |
+| Wearable resilience | Wi-Fi interruption, reconnect, Pi reboot/address change, revocation, WAN-disabled session |
+| Android voice/crash | physical accent/noise/false-command and repeated lifecycle/tombstone matrix |
+| Accessibility | physical TalkBack focus/order/live announcements and 2× text |
+| Performance | phone/Pi latency, FPS, memory, temperature, throttling, battery/power |
 
-This is an assistive aid, not navigation and not a replacement for a cane,
-guide dog, mobility training, human assistance, situational awareness, or user
-judgment. Relative visual risk is not metric distance.
+Code-free first enrollment does not mean unauthenticated ongoing control. It is
+exclusive trust-on-first-use. Protocol v1 remains authenticated but
+unencrypted, so never use public Wi-Fi or port-forward TCP 8765. The product is
+an assistive aid, not a replacement for a cane, guide dog, mobility training,
+human assistance, situational awareness, or user judgment.
 
 ## Exact Next Action
 
-Deploy to the connected physical device (TECNO BG6) and perform regression testing on:
-1. Document Scanner: Pause reading, wait a few seconds, then say "resume". Verify it resumes without shifting to the end.
-2. Settings Confirmation: Trigger a command that requires confirmation, then press the mic button or say "cancel". Verify it cleanly cancels.
+Place the Pi and TECNO BG6 on the same owner-controlled private router/hotspot,
+confirm the current Pi address and TCP 8765, deploy/start the matching Module
+57 service with first-client enrollment enabled, and tap `Connect & Start
+Detection`. Record first enrollment, authenticated running state, phone audio,
+second-client rejection, disconnect fallback and Pi camera/model logs.

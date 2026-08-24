@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/assistant_providers.dart';
 import '../../../app/assistant_session_controller.dart';
 import '../../../app/router/route_paths.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_dimensions.dart';
 import '../../../app/theme/app_icons.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../app/voice_kernel/voice_kernel_providers.dart';
 import '../../../core/constants/app_keys.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/widgets/app_screen_scaffold.dart';
 import '../../../core/widgets/visual_components.dart';
 import '../../../domain/enums/assistant_session_state.dart';
+import '../../../domain/enums/voice_feature_context.dart';
 
 /// The primary Personalized Local AI Assistant screen.
 ///
@@ -35,22 +36,23 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _showTextInput = false;
   bool _holdActive = false;
+  late final VisionVoiceKernelV3 _voiceKernel;
 
   @override
   void initState() {
     super.initState();
+    _voiceKernel = ref.read(visionVoiceKernelProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        final tts = ref.read(speechOutputServiceProvider);
-        tts.speak(
-          'Smart AI Assistant ready. Ask me anything, or say Bye to exit.',
-        );
-      }
+      if (!mounted) return;
+      _voiceKernel.setFeatureContext(VoiceFeatureContext.smartAi);
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _voiceKernel.setFeatureContext(VoiceFeatureContext.unknown);
+    });
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -59,6 +61,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   @override
   Widget build(BuildContext context) {
     final controllerState = ref.watch(assistantSessionControllerProvider);
+    final voiceState = ref.watch(visionVoiceKernelProvider);
     final controller = ref.read(assistantSessionControllerProvider.notifier);
     final sessionState = controllerState.sessionState;
 
@@ -124,23 +127,23 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         const SizedBox(height: AppSpacing.space3),
         Semantics(
           liveRegion: true,
-          label: controllerState.handsFreeStatus,
+          label: voiceState.statusMessage,
           child: Card(
             child: ListTile(
               leading: Icon(
-                controllerState.handsFreeActive
+                voiceState.isHandsFreeActive
                     ? Icons.hearing
                     : Icons.mic_off_outlined,
-                color: controllerState.handsFreeActive
+                color: voiceState.isHandsFreeActive
                     ? AppColors.success
                     : AppColors.warning,
               ),
               title: Text(
-                controllerState.handsFreeActive
+                voiceState.isHandsFreeActive
                     ? 'Hands-free voice is on'
                     : 'Hands-free voice is not active',
               ),
-              subtitle: Text(controllerState.handsFreeStatus),
+              subtitle: Text(voiceState.statusMessage),
             ),
           ),
         ),

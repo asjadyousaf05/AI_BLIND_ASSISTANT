@@ -5,11 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/repositories/wearable_credential_repository.dart';
 import '../domain/repositories/wearable_repository.dart';
 import '../domain/services/wearable_discovery_service.dart';
+import '../domain/services/wearable_phone_feedback_service.dart';
 import '../domain/services/wearable_transport.dart';
 import '../infrastructure/networking/method_channel_wearable_credential_repository.dart';
 import '../infrastructure/networking/method_channel_wearable_discovery_service.dart';
 import '../infrastructure/networking/web_socket_wearable_repository.dart';
 import '../infrastructure/networking/web_socket_wearable_transport.dart';
+import 'voice_kernel/voice_kernel_providers.dart';
+import 'wearable_phone_feedback_service.dart';
 
 final wearableDiscoveryServiceProvider = Provider<WearableDiscoveryService>((
   ref,
@@ -39,3 +42,10 @@ final wearableRepositoryProvider = Provider<WearableRepository>((ref) {
 final wearableClientIdProvider = FutureProvider<String>((ref) {
   return ref.watch(wearableCredentialRepositoryProvider).getOrCreateClientId();
 });
+
+final wearablePhoneFeedbackServiceProvider =
+    Provider<WearablePhoneFeedbackService>((ref) {
+      return VoiceKernelWearablePhoneFeedbackService(
+        speak: ref.read(visionVoiceKernelProvider.notifier).speakFeedback,
+      );
+    });

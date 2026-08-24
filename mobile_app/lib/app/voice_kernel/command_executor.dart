@@ -45,13 +45,16 @@ class CommandExecutor {
         NavigateHome() => _navigate(RoutePaths.home, 'home'),
         NavigateSettings() => _navigate(RoutePaths.settings, 'settings'),
         NavigateScanner() => _navigate(RoutePaths.ocrScanner, 'ocr_scanner'),
-        NavigateSmartAi() => _navigate(RoutePaths.assistant, 'assistant'),
-        NavigateMobileAssistance() =>
-          _navigate(RoutePaths.mobileAssistance, 'mobile_assistance'),
-        NavigateRaspberryPi() =>
-          _navigate(RoutePaths.raspberryPi, 'raspberry_pi'),
-        NavigateModeSelection() =>
-          _navigate(RoutePaths.modeSelection, 'modes'),
+        NavigateSmartAi() => _navigate(RoutePaths.assistant, 'Smart AI'),
+        NavigateMobileAssistance() => _navigate(
+          RoutePaths.mobileAssistance,
+          'mobile_assistance',
+        ),
+        NavigateRaspberryPi() => _navigate(
+          RoutePaths.raspberryPi,
+          'raspberry_pi',
+        ),
+        NavigateModeSelection() => _navigate(RoutePaths.modeSelection, 'modes'),
         NavigateSafety() => _navigate(RoutePaths.aboutSafety, 'safety'),
         NavigateHelp() => _navigate(RoutePaths.help, 'help'),
         NavigateBack() => _navigateBack(),
@@ -78,6 +81,8 @@ class CommandExecutor {
         ReadingPrevious() => _readingPrevious(),
         ReadingRepeat() => _readingRepeat(),
         ReadingRestart() => _readingRestart(),
+        ReadingLast() => _readingLast(),
+        ReadingGoToLine(:final lineNumber) => _readingGoToLine(lineNumber),
         ReadingSpell() => _readingSpell(),
         SetReadingProfile(:final profile) => _setReadingProfile(profile),
 
@@ -95,15 +100,19 @@ class CommandExecutor {
         ResumeWearable() => _resumeWearable(),
 
         // ─────────────────── Settings ───────────────────────────
-        SetDetectionSensitivity(:final level) =>
-          _setDetectionSensitivity(level),
+        SetDetectionSensitivity(:final level) => _setDetectionSensitivity(
+          level,
+        ),
         SetFeedbackMode(:final mode) => _setFeedbackMode(mode),
-        SetBooleanSetting(:final setting, :final enabled) =>
-          _setBooleanSetting(setting, enabled),
+        SetBooleanSetting(:final setting, :final enabled) => _setBooleanSetting(
+          setting,
+          enabled,
+        ),
         SetFlashlight(:final enabled) => _setFlashlight(enabled),
         SetSpeechRate(:final rate) => _setSpeechRate(rate),
-        SetAnnouncementCooldown(:final seconds) =>
-          _setAnnouncementCooldown(seconds),
+        SetAnnouncementCooldown(:final seconds) => _setAnnouncementCooldown(
+          seconds,
+        ),
         GetAppSettings() => _getAppSettings(),
 
         // ─────────────────── System / Utility ───────────────────
@@ -114,23 +123,24 @@ class CommandExecutor {
 
         // ─────────────────── Conversation ───────────────────────
         Greeting() => const VoiceCommandSuccess(
-            feedbackText: "Hello. I'm ready to help. What would you like me to do?",
-          ),
+          feedbackText:
+              "Hello. I'm ready to help. What would you like me to do?",
+        ),
         WhatCanYouDo() => const VoiceCommandSuccess(
-            feedbackText:
-                'I can control detection sensitivity, feedback mode, '
-                'accessibility settings, Mobile Mode detection, document scanning, '
-                'and Raspberry Pi wearable mode. I can also navigate screens, '
-                'read the time, and report recent detections.',
-          ),
+          feedbackText:
+              'I can control detection sensitivity, feedback mode, '
+              'accessibility settings, Mobile Mode detection, document scanning, '
+              'and Raspberry Pi wearable mode. I can also navigate screens, '
+              'read the time, and report recent detections.',
+        ),
         WhoAreYou() => const VoiceCommandSuccess(
-            feedbackText:
-                "I'm Vision AI, your offline voice assistant for this app.",
-          ),
+          feedbackText:
+              "I'm Vision AI, your offline voice assistant for this app.",
+        ),
         Goodbye() || DismissAssistant() => _dismissAssistant(),
         ThankYou() => const VoiceCommandSuccess(
-            feedbackText: "You're welcome. Say Vision whenever you need me.",
-          ),
+          feedbackText: "You're welcome. I'm still listening.",
+        ),
 
         // ─────────────────── Confirmation ───────────────────────
         ConfirmYes() => const VoiceCommandSuccess(feedbackText: 'Confirmed.'),
@@ -138,11 +148,11 @@ class CommandExecutor {
 
         // ─────────────────── Ambiguous / Unknown ────────────────
         AmbiguousIntent() => const VoiceCommandInvalidState(
-            'Multiple commands matched. Please be more specific.',
-          ),
+          'Multiple commands matched. Please be more specific.',
+        ),
         UnknownIntent(:final transcript) => VoiceCommandUnavailable(
-            'Unknown command: $transcript',
-          ),
+          'Unknown command: $transcript',
+        ),
       };
     } catch (e) {
       VoiceDiagnosticLogger.error('Command execution failed', e);
@@ -247,9 +257,7 @@ class CommandExecutor {
         current.errorMessage ?? 'Mobile assistance failed to start.',
       );
     }
-    return const VoiceCommandSuccess(
-      feedbackText: 'Mobile Mode started.',
-    );
+    return const VoiceCommandSuccess(feedbackText: 'Mobile Mode started.');
   }
 
   Future<VoiceCommandResult> _stopMobileMode() async {
@@ -272,9 +280,7 @@ class CommandExecutor {
       }
     }
 
-    return const VoiceCommandSuccess(
-      feedbackText: 'Mobile Mode stopped.',
-    );
+    return const VoiceCommandSuccess(feedbackText: 'Mobile Mode stopped.');
   }
 
   Future<VoiceCommandResult> _pauseMobileMode() async {
@@ -376,7 +382,9 @@ class CommandExecutor {
     ref
         .read(ocrActionTriggerProvider.notifier)
         .trigger(OcrActionTrigger.resume);
-    return const VoiceCommandSuccess(feedbackText: 'Resuming reading.');
+    // The document player starts speaking immediately. Additional assistant
+    // feedback would cancel that utterance on Android's single TTS engine.
+    return const VoiceCommandSuccess();
   }
 
   VoiceCommandResult _readingNext() {
@@ -402,12 +410,24 @@ class CommandExecutor {
     ref
         .read(ocrActionTriggerProvider.notifier)
         .trigger(OcrActionTrigger.restart);
-    return const VoiceCommandSuccess(feedbackText: 'Restarting reading.');
+    return const VoiceCommandSuccess();
+  }
+
+  VoiceCommandResult _readingLast() {
+    ref.read(ocrActionTriggerProvider.notifier).trigger(OcrActionTrigger.last);
+    return const VoiceCommandSuccess();
+  }
+
+  VoiceCommandResult _readingGoToLine(int lineNumber) {
+    ref
+        .read(ocrActionTriggerProvider.notifier)
+        .trigger(OcrActionTrigger.goToLine, lineNumber: lineNumber);
+    return const VoiceCommandSuccess();
   }
 
   VoiceCommandResult _readingSpell() {
     ref.read(ocrActionTriggerProvider.notifier).trigger(OcrActionTrigger.spell);
-    return const VoiceCommandSuccess(feedbackText: 'Spelling out text.');
+    return const VoiceCommandSuccess();
   }
 
   VoiceCommandResult _setReadingProfile(String profile) {
@@ -417,9 +437,7 @@ class CommandExecutor {
       _ => OcrActionTrigger.setNormalMode,
     };
     ref.read(ocrActionTriggerProvider.notifier).trigger(trigger);
-    return VoiceCommandSuccess(
-      feedbackText: 'Switched reading mode to $profile.',
-    );
+    return const VoiceCommandSuccess();
   }
 
   // ─────────────────── Environment Mode ───────────────────────
@@ -463,7 +481,9 @@ class CommandExecutor {
     final controller = ref.read(wearableControllerProvider.notifier);
     var current = ref.read(wearableControllerProvider);
     if (current.session.phase.isConnected) {
-      return const VoiceCommandAlreadyInState('Raspberry Pi is already connected.');
+      return const VoiceCommandAlreadyInState(
+        'Raspberry Pi is already connected.',
+      );
     }
     if (current.session.selectedDevice == null) {
       await controller.discover();
@@ -491,14 +511,18 @@ class CommandExecutor {
   Future<VoiceCommandResult> _disconnectPi() async {
     final controller = ref.read(wearableControllerProvider.notifier);
     await controller.disconnect();
-    return const VoiceCommandSuccess(feedbackText: 'Raspberry Pi disconnected.');
+    return const VoiceCommandSuccess(
+      feedbackText: 'Raspberry Pi disconnected.',
+    );
   }
 
   Future<VoiceCommandResult> _startWearable() async {
     await ref.read(wearableControllerProvider.notifier).startAssistance();
     final current = ref.read(wearableControllerProvider);
     return current.session.phase.name == 'running'
-        ? const VoiceCommandSuccess(feedbackText: 'Wearable assistance started.')
+        ? const VoiceCommandSuccess(
+            feedbackText: 'Wearable assistance started.',
+          )
         : VoiceCommandFailure(
             current.failure?.userMessage ??
                 'Wearable did not enter running state.',
@@ -507,17 +531,23 @@ class CommandExecutor {
 
   Future<VoiceCommandResult> _stopWearable() async {
     await ref.read(wearableControllerProvider.notifier).stopAssistance();
-    return const VoiceCommandSuccess(feedbackText: 'Wearable assistance stopped.');
+    return const VoiceCommandSuccess(
+      feedbackText: 'Wearable assistance stopped.',
+    );
   }
 
   Future<VoiceCommandResult> _pauseWearable() async {
     await ref.read(wearableControllerProvider.notifier).pauseAssistance();
-    return const VoiceCommandSuccess(feedbackText: 'Wearable assistance paused.');
+    return const VoiceCommandSuccess(
+      feedbackText: 'Wearable assistance paused.',
+    );
   }
 
   Future<VoiceCommandResult> _resumeWearable() async {
     await ref.read(wearableControllerProvider.notifier).resumeAssistance();
-    return const VoiceCommandSuccess(feedbackText: 'Wearable assistance resumed.');
+    return const VoiceCommandSuccess(
+      feedbackText: 'Wearable assistance resumed.',
+    );
   }
 
   // ─────────────────── Settings ───────────────────────────────
@@ -544,7 +574,8 @@ class CommandExecutor {
     };
     final notifier = ref.read(appSettingsControllerProvider.notifier);
     notifier.selectFeedbackMode(mode);
-    if (mode == FeedbackMode.vibration || mode == FeedbackMode.audioAndVibration) {
+    if (mode == FeedbackMode.vibration ||
+        mode == FeedbackMode.audioAndVibration) {
       notifier.setVibrationEnabled(true);
     }
     return VoiceCommandSuccess(
@@ -573,6 +604,18 @@ class CommandExecutor {
   }
 
   Future<VoiceCommandResult> _setFlashlight(bool enabled) async {
+    if (appRouteObserver.currentRoute == RoutePaths.ocrScanner) {
+      ref
+          .read(ocrActionTriggerProvider.notifier)
+          .trigger(
+            enabled
+                ? OcrActionTrigger.enableTorch
+                : OcrActionTrigger.disableTorch,
+          );
+      return VoiceCommandSuccess(
+        feedbackText: 'Scanner flashlight turned ${enabled ? 'on' : 'off'}.',
+      );
+    }
     try {
       await ref.read(cameraServiceProvider).setTorch(enabled);
       return VoiceCommandSuccess(
@@ -590,9 +633,7 @@ class CommandExecutor {
       _ => 0.5,
     };
     unawaited(ref.read(speechOutputServiceProvider).setSpeechRate(speed));
-    return VoiceCommandSuccess(
-      feedbackText: 'Speech rate set to $rate.',
-    );
+    return VoiceCommandSuccess(feedbackText: 'Speech rate set to $rate.');
   }
 
   VoiceCommandResult _setAnnouncementCooldown(int seconds) {
@@ -629,12 +670,27 @@ class CommandExecutor {
   VoiceCommandResult _getCurrentDate() {
     final now = DateTime.now();
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     const days = [
-      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-      'Friday', 'Saturday', 'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
     ];
     final dayName = days[now.weekday - 1];
     final monthName = months[now.month - 1];
@@ -665,9 +721,18 @@ class CommandExecutor {
 
   VoiceCommandResult _dismissAssistant() {
     final navigator = appNavigatorKey.currentState;
-    if (navigator != null && navigator.canPop()) {
-      navigator.pop();
+    if (RoutePaths.isAssistantRoute(appRouteObserver.currentRoute) &&
+        navigator != null &&
+        navigator.canPop()) {
+      navigator.popUntil(
+        (route) => !RoutePaths.isAssistantRoute(route.settings.name),
+      );
+      return const VoiceCommandSuccess(
+        feedbackText: 'Returning to offline Vision AI.',
+      );
     }
-    return const VoiceCommandSuccess(feedbackText: 'Goodbye.');
+    return const VoiceCommandSuccess(
+      feedbackText: 'Goodbye. Say Hey Vision AI when you need me again.',
+    );
   }
 }

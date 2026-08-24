@@ -52,6 +52,7 @@ class CommandAuthorizer {
           VoiceRejectionReason.emptyOrNonsense,
         );
       }
+      return const AuthorizationResult.rejected(VoiceRejectionReason.lowMatch);
     }
 
     // 2. Session currency — reject stale recognizer sessions
@@ -77,16 +78,12 @@ class CommandAuthorizer {
 
     // 5. Expiry check
     if (event.isExpired()) {
-      return const AuthorizationResult.rejected(
-        VoiceRejectionReason.expired,
-      );
+      return const AuthorizationResult.rejected(VoiceRejectionReason.expired);
     }
 
     // 6. Deduplication
     if (!_checkDeduplication(event)) {
-      return const AuthorizationResult.rejected(
-        VoiceRejectionReason.duplicate,
-      );
+      return const AuthorizationResult.rejected(VoiceRejectionReason.duplicate);
     }
 
     // 7. TTS echo guard
@@ -111,21 +108,17 @@ class CommandAuthorizer {
 
     // 10. Low match score
     if (command.matchScore < 0.4 && command.intent is! UnknownIntent) {
-      return const AuthorizationResult.rejected(
-        VoiceRejectionReason.lowMatch,
-      );
+      return const AuthorizationResult.rejected(VoiceRejectionReason.lowMatch);
     }
 
     // 11. Ambiguity check
     if (command.isAmbiguous) {
-      return const AuthorizationResult.rejected(
-        VoiceRejectionReason.ambiguous,
-      );
+      return const AuthorizationResult.rejected(VoiceRejectionReason.ambiguous);
     }
 
     // 12. Circuit breaker
-    final canonicalName = definition?.canonicalName ??
-        command.intent.runtimeType.toString();
+    final canonicalName =
+        definition?.canonicalName ?? command.intent.runtimeType.toString();
     if (!circuitBreaker.recordAndCheck(canonicalName)) {
       return const AuthorizationResult.rejected(
         VoiceRejectionReason.commandLoopSuppressed,

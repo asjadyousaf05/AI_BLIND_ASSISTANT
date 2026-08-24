@@ -48,8 +48,7 @@ extension VoiceRuntimeStateX on VoiceRuntimeState {
 
   /// Whether the kernel is operational (not disabled/error).
   bool get isOperational =>
-      this != VoiceRuntimeState.disabled &&
-      this != VoiceRuntimeState.error;
+      this != VoiceRuntimeState.disabled && this != VoiceRuntimeState.error;
 
   /// Human-readable label for diagnostics and accessibility.
   String get label => switch (this) {

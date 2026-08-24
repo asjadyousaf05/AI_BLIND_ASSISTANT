@@ -106,3 +106,21 @@ def test_pairing_code_is_consumed_atomically_once(tmp_path) -> None:
         results = list(executor.map(consume, ["phone-one", "phone-two"]))
     assert sum(isinstance(result, tuple) for result in results) == 1
     assert sum(result == "PAIRING_UNAVAILABLE" for result in results) == 1
+
+
+def test_code_free_enrollment_is_exclusive_and_atomic(tmp_path) -> None:
+    pairing = PairingManager(StateStore(tmp_path / "state.json"))
+
+    def enroll(client_id: str):
+        try:
+            return pairing.enroll_first_client(client_id=client_id, display_name=client_id)
+        except ProtocolError as error:
+            return error.code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(enroll, ["phone-one", "phone-two"]))
+
+    assert sum(isinstance(result, tuple) for result in results) == 1
+    assert sum(result == "ENROLLMENT_CLOSED" for result in results) == 1
+    credentials = pairing.store.load()["credentials"]
+    assert sum(not value["revoked"] for value in credentials.values()) == 1

@@ -134,4 +134,49 @@ void main() {
 
     expect(find.byType(OcrScannerScreen), findsOneWidget);
   });
+
+  testWidgets('reader UI exposes complete accessible playback navigation', (
+    tester,
+  ) async {
+    final fakeSpeech = _FakeSpeechOutput();
+    final fakeCamera = _FakeCameraService();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          cameraServiceProvider.overrideWithValue(fakeCamera),
+          speechOutputServiceProvider.overrideWithValue(fakeSpeech),
+        ],
+        child: const MaterialApp(
+          home: OcrScannerScreen(
+            initialDocumentTextForTesting:
+                'First reading line. Second reading line. Third reading line.',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Line 1 of 3'), findsOneWidget);
+    expect(find.byKey(const Key('ocr_first_line_button')), findsOneWidget);
+    expect(find.byKey(const Key('ocr_last_line_button')), findsOneWidget);
+    expect(find.byKey(const Key('ocr_line_picker_button')), findsOneWidget);
+    expect(find.byKey(const Key('ocr_stop_reading_button')), findsOneWidget);
+    expect(find.byKey(const Key('ocr_spell_button')), findsOneWidget);
+    expect(find.text('VOICE CONTROLS'), findsOneWidget);
+
+    final picker = find.byKey(const Key('ocr_line_picker_button'));
+    await tester.ensureVisible(picker);
+    await tester.tap(picker);
+    await tester.pump();
+
+    expect(find.text('Go to line'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('ocr_line_number_field')), '2');
+    await tester.tap(find.byKey(const Key('ocr_go_to_line_confirm_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(fakeSpeech.spoken, contains('Second reading line.'));
+  });
 }

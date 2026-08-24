@@ -129,6 +129,16 @@ class ReadingRestart extends VoiceIntent {
   const ReadingRestart();
 }
 
+class ReadingLast extends VoiceIntent {
+  const ReadingLast();
+}
+
+/// Reads from a one-based visible line number in the document reader.
+class ReadingGoToLine extends VoiceIntent {
+  final int lineNumber;
+  const ReadingGoToLine(this.lineNumber);
+}
+
 class ReadingSpell extends VoiceIntent {
   const ReadingSpell();
 }
@@ -200,7 +210,8 @@ class SetFeedbackMode extends VoiceIntent {
 }
 
 class SetBooleanSetting extends VoiceIntent {
-  final String setting; // 'high_contrast', 'large_text', 'reduced_motion', 'vibration', 'hands_free'
+  final String
+  setting; // 'high_contrast', 'large_text', 'reduced_motion', 'vibration', 'hands_free'
   final bool enabled;
   const SetBooleanSetting(this.setting, {required this.enabled});
 }

@@ -170,7 +170,12 @@ void main() {
       _filledButtonFor(tester, AppKeys.raspberryPiScanButton).onPressed,
       isNotNull,
     );
-    expect(find.byKey(AppKeys.raspberryPiConnectButton), findsNothing);
+    expect(find.byKey(AppKeys.raspberryPiConnectButton), findsOneWidget);
+    expect(find.text('Connect & Start Detection'), findsOneWidget);
+    expect(
+      _filledButtonFor(tester, AppKeys.raspberryPiConnectButton).onPressed,
+      isNotNull,
+    );
     expect(find.byKey(AppKeys.raspberryPiErrorButton), findsNothing);
   });
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import secrets
 import time
@@ -190,6 +191,18 @@ class WearableWebSocketServer:
             self._sender_loop(session), name="websocket-sender"
         )
         credentials = self.pairing.store.load().get("credentials", {})
+        has_active_credential = any(
+            isinstance(item, dict) and not bool(item.get("revoked", False))
+            for item in credentials.values()
+        )
+        capabilities = [
+            "object_detection",
+            "local_speech",
+            "settings_sync",
+            "device_health",
+        ]
+        if self.config.allow_first_client_enrollment and not has_active_credential:
+            capabilities.append("exclusive_first_client_enrollment")
         session.enqueue(
             "hello",
             {
@@ -200,13 +213,8 @@ class WearableWebSocketServer:
                 "nonce": session.nonce,
                 "serviceVersion": "0.1.0",
                 "modelName": "YOLOv8n Open Images V7 NCNN 320",
-                "paired": any(not item.get("revoked", False) for item in credentials.values()),
-                "capabilities": [
-                    "object_detection",
-                    "local_speech",
-                    "settings_sync",
-                    "device_health",
-                ],
+                "paired": has_active_credential,
+                "capabilities": capabilities,
             },
         )
         try:
@@ -268,6 +276,49 @@ class WearableWebSocketServer:
             )
 
     async def _handle_unauthenticated(self, session: ClientSession, envelope: Envelope) -> None:
+        if envelope.type == "enrollment_request":
+            if envelope.authentication_tag is not None:
+                raise ProtocolError("AUTH_TAG_UNEXPECTED", "enrollment request must be unsigned")
+            self._pairing_replay.check_and_mark(envelope.message_id, envelope.timestamp)
+            self._require_fields(envelope.payload, {"clientId", "clientName"})
+            client_id = str(envelope.payload["clientId"])
+            display_name = str(envelope.payload["clientName"])
+            if not 1 <= len(client_id) <= 128 or not 1 <= len(display_name) <= 80:
+                raise ProtocolError("INVALID_PAYLOAD", "client identity is invalid")
+            if not self.config.allow_first_client_enrollment:
+                payload = {
+                    "requestMessageId": envelope.message_id,
+                    "enrolled": False,
+                    "errorCode": "enrollment_disabled",
+                }
+            elif not self._is_private_peer(session.connection.remote_address):
+                payload = {
+                    "requestMessageId": envelope.message_id,
+                    "enrolled": False,
+                    "errorCode": "private_lan_required",
+                }
+            else:
+                try:
+                    credential_id, token = await asyncio.to_thread(
+                        self.pairing.enroll_first_client,
+                        client_id=client_id,
+                        display_name=display_name,
+                    )
+                    payload = {
+                        "requestMessageId": envelope.message_id,
+                        "enrolled": True,
+                        "deviceId": self.config.device_id,
+                        "credentialId": credential_id,
+                        "credentialSecret": token,
+                    }
+                except ProtocolError as error:
+                    payload = {
+                        "requestMessageId": envelope.message_id,
+                        "enrolled": False,
+                        "errorCode": error.code.lower(),
+                    }
+            session.enqueue("enrollment_result", payload)
+            return
         if envelope.type == "pair_request":
             if envelope.authentication_tag is not None:
                 raise ProtocolError("AUTH_TAG_UNEXPECTED", "pairing request must be unsigned")
@@ -330,6 +381,16 @@ class WearableWebSocketServer:
         self._authenticated_by_credential[credential_id] = session
         self._update_phone_count()
         session.enqueue("acknowledgement", acknowledgement(envelope).payload)
+
+    @staticmethod
+    def _is_private_peer(remote_address: object) -> bool:
+        if not isinstance(remote_address, tuple) or not remote_address:
+            return False
+        try:
+            address = ipaddress.ip_address(str(remote_address[0]).split("%", maxsplit=1)[0])
+        except ValueError:
+            return False
+        return address.is_private or address.is_loopback
 
     async def _handle_authenticated(self, session: ClientSession, envelope: Envelope) -> None:
         if session.auth_key is None or session.credential_id is None:

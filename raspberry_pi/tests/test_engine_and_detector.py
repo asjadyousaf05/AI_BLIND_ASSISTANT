@@ -177,7 +177,7 @@ async def test_inference_failure_stops_camera_pipeline(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_feedback_has_per_class_cooldown_and_does_not_mark_busy_speech() -> None:
+async def test_feedback_has_per_class_cooldown_and_phone_ownership() -> None:
     speech = RecordingSpeech()
     policy = FeedbackPolicy(speech, max_announcements_per_minute=2)
     settings = WearableSettings.defaults("pi-feedback-test")
@@ -207,8 +207,10 @@ async def test_feedback_has_per_class_cooldown_and_does_not_mark_busy_speech() -
     assert await policy.consider([center], settings, phone_connected=False) == (None, "none")
     assert len(policy._announcement_times) == 1
 
-    policy._last_announced.clear()
-    policy._speech_task = asyncio.create_task(asyncio.sleep(10))
+    await policy.close()
+
+    phone_speech = RecordingSpeech()
+    phone_policy = FeedbackPolicy(phone_speech, max_announcements_per_minute=2)
     other = Detection(
         104,
         "Chair",
@@ -218,7 +220,11 @@ async def test_feedback_has_per_class_cooldown_and_does_not_mark_busy_speech() -
         60,
         "mobility_hazard",
     )
-    await policy.consider([other], settings, phone_connected=True)
-    assert await policy.consider([other], settings, phone_connected=True) == (None, "none")
-    assert 104 not in policy._last_announced
-    await policy.close()
+    assert await phone_policy.consider([other], settings, phone_connected=True) == (
+        None,
+        "none",
+    )
+    announced, target = await phone_policy.consider([other], settings, phone_connected=True)
+    assert announced == other and target == "phone"
+    assert phone_speech.messages == []
+    await phone_policy.close()

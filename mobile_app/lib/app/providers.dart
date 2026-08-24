@@ -158,20 +158,32 @@ enum OcrActionTrigger {
   next,
   repeat,
   restart,
+  last,
+  goToLine,
   spell,
   setLearningMode,
   setNormalMode,
   setSkimMode,
   switchCamera,
+  enableTorch,
+  disableTorch,
   copyText,
 }
 
-class OcrActionTriggerController extends Notifier<OcrActionTrigger?> {
-  @override
-  OcrActionTrigger? build() => null;
+/// A typed Scanner action request, including an optional one-based line target.
+class OcrActionRequest {
+  const OcrActionRequest(this.action, {this.lineNumber});
 
-  void trigger(OcrActionTrigger action) {
-    state = action;
+  final OcrActionTrigger action;
+  final int? lineNumber;
+}
+
+class OcrActionTriggerController extends Notifier<OcrActionRequest?> {
+  @override
+  OcrActionRequest? build() => null;
+
+  void trigger(OcrActionTrigger action, {int? lineNumber}) {
+    state = OcrActionRequest(action, lineNumber: lineNumber);
   }
 
   void clear() {
@@ -181,6 +193,6 @@ class OcrActionTriggerController extends Notifier<OcrActionTrigger?> {
 
 /// Global trigger for OCR scanner actions invoked by voice assistant.
 final ocrActionTriggerProvider =
-    NotifierProvider<OcrActionTriggerController, OcrActionTrigger?>(
+    NotifierProvider<OcrActionTriggerController, OcrActionRequest?>(
       OcrActionTriggerController.new,
     );

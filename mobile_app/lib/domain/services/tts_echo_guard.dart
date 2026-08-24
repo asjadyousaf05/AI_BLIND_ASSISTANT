@@ -131,7 +131,7 @@ class TtsEchoGuard {
   }
 
   /// Determines whether an active TTS sentence is likely to trigger a false wake event.
-  /// 
+  ///
   /// Checks if the TTS is currently speaking and if the active sentence contains
   /// the word "vision".
   bool isWakeWordEcho({

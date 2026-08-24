@@ -1,132 +1,121 @@
-# Offline Vision AI Assistant: Complete Technical Architecture & Guide
+# Offline Vision AI Assistant Guide
 
-**Project:** AI Blind Assistant  
-**Platform:** Android (Flutter & Kotlin Native)  
-**Classification:** 100% On-Device, Privacy-First, Real-Time Assistive Voice Engine  
+Last reviewed: 2026-08-20
 
----
+## Purpose and Boundary
 
-## 1. Executive Summary & Core Philosophy
+Offline Vision AI is a foreground, in-app voice controller for blind and
+visually impaired Android users. It controls allow-listed AI Blind Assistant
+features without internet, pairing, or an AI model. It is not a system-wide
+assistant, does not listen while the app is backgrounded or locked, and cannot
+be guaranteed to match the proprietary models and microphone tuning used by
+Siri or Google Assistant.
 
-The **Offline Vision AI Assistant** is an on-device, hands-free conversational and command engine designed specifically for blind and visually impaired users. It delivers deterministic, zero-latency app control, real-time feedback, and accessible device operations **without requiring internet connectivity, cloud APIs, or external servers**.
+Raw microphone audio stays in transient Android/Vosk memory. It is not saved,
+logged, or uploaded. Smart AI may send only unmatched transcript text to the
+owner-paired private-LAN backend. Camera frames never enter either voice path.
 
-```
- +-------------------------------------------------------------------------+
- |                       AI BLIND ASSISTANT ECOSYSTEM                     |
- |                                                                         |
- |  +---------------------------------+  +------------------------------+  |
- |  |    100% OFFLINE VISION AI       |  |     SMART AI (OPTIONAL)      |  |
- |  |   - Bundled Vosk Kaldi ASR      |  |   - Paired Private Laptop    |  |
- |  |   - Hardware AEC & Noise Suppr. |  |   - Local Whisper & Ollama   |  |
- |  |   - Deterministic Regex Engine  |  |   - Gemini Multimodal Fallbk |  |
- |  |   - 0ms Latency Device Control  |  |   - Complex QA & Reasoning   |  |
- |  +---------------------------------+  +------------------------------+  |
- +-------------------------------------------------------------------------+
-```
+## Interaction
 
-### Key Architectural Pillars:
-1. **100% Privacy & Data Sovereignty**: Voice audio is decoded entirely in RAM on the Android device; no raw audio or transcripts are ever transmitted to the cloud.
-2. **Deterministic Command Routing**: Spoken controls map directly to strongly-typed internal Dart domain actions through deterministic parsing, completely eliminating LLM hallucinations or latency.
-3. **Hardware-Accelerated Acoustic Echo Cancellation (AEC)**: Hardware DSP filtering isolates the user's voice from the phone's loudspeaker, allowing seamless voice interruptions (barge-in) while the app is speaking aloud.
-4. **Sub-50ms Fast-Path Execution**: Critical assistive actions (*"stop"*, *"pause"*, *"resume"*, *"scan"*) execute on streaming partial speech hypotheses without waiting for conversational silence.
+1. Open AI Blind Assistant and grant Microphone once.
+2. Say “Hey Vision AI” or “Hi Vision AI”.
+3. Wait for the short spoken acknowledgement: “Listening.”
+4. Say a command, for example:
+   - “Run mobile mode detection.”
+   - “Start mobile mode detection.”
+   - “Change feedback mode to audio.”
+   - “Set speech rate to fast.”
+   - “Open Smart AI.”
+5. Keep giving offline commands without repeating the wake phrase. Commands
+   execute through deterministic Riverpod controllers and the assistant speaks
+   each observed result.
+6. Say “goodbye”, “bye”, or “stop listening” to end the offline command session.
+7. In Smart AI, ask follow-up questions without repeating the wake phrase. Say
+   “bye” (including the common ASR spelling “by”) to leave Smart AI and return
+   to the active offline command session.
 
----
+## Audio and Recognition Pipeline
 
-## 2. End-to-End Architecture & Data Pipeline
-
-The voice engine operates across a high-performance native Kotlin subsystem and a reactive Flutter Riverpod state machine:
-
-```mermaid
-flowchart TD
-    A[Microphone Audio Input\n16 kHz Mono PCM] --> B[Android AudioRecord Session]
-    B --> C[Hardware AudioFX: AEC + NoiseSuppressor + AGC]
-    C --> D[Vosk Kaldi Offline Speech Recognizer]
-    D -->|Partial Streaming Hypothesis < 50ms| E{Is Direct Interruption / Action?}
-    D -->|Final Speech Hypothesis| F[Platform Channel: onHandsFreeCommand]
-    E -->|Yes: pause, resume, scan, stop| F
-    E -->|No| D
-    F --> G[AssistantSessionController Dart]
-    G --> H[OfflineAppCommandParser\nContext-Aware Regex Engine]
-    H --> I{Speech / TTS Active?}
-    I -->|Yes| J[Block Navigation / Allow Reader & Stop Tools]
-    I -->|No| K[Execute Strongly-Typed Tool Call]
-    J --> K
-    K --> L[Domain Service / Feature Trigger]
-    L --> M[Accessible Audio & Haptic Feedback\nZero Microphone Echo]
+```text
+Android VOICE_RECOGNITION AudioRecord, 16 kHz mono
+  -> device AEC / noise suppression / automatic gain control when supported
+  -> bundled English Vosk model
+  -> wake-only grammar while idle
+  -> complete final “Hey/Hi Vision AI” match
+  -> pause microphone and speak “Listening.”
+  -> focused app/scanner grammar, or Smart AI conversation graph
+  -> in-memory transcript
+  -> deterministic local intent resolver first
+  -> real local controller action, or Smart AI text backend on /assistant only
+  -> pause microphone during TTS
+  -> restore contextual command/conversation state until explicit goodbye
 ```
 
----
+The wake decoder includes `[unk]` so unrelated sound is not forced into an app
+command. Partial Vosk hypotheses never activate the assistant. A standalone
+“Vision”, “Vision AI”, generic speech, and arbitrary leading words are rejected.
+Decoder timeouts do not end an activated offline session; its contextual grammar
+keeps listening until explicit goodbye. Smart AI conversation stays active only
+while its screen is visible and the app remains foregrounded.
 
-## 3. Subsystem Deep-Dive
+## Crash-Safety and Microphone Ownership
 
-### 3.1. Native Audio Capture & DSP Signal Conditioning
-* **Audio Source**: `MediaRecorder.AudioSource.VOICE_RECOGNITION` (activates chipset beamforming microphones).
-* **Sample Rate**: `16,000 Hz`, 16-bit Mono PCM.
-* **Hardware Audio Effects**:
-  * `android.media.audiofx.AcousticEchoCanceler`: Filters phone loudspeaker playback from the microphone buffer.
-  * `android.media.audiofx.NoiseSuppressor`: Attenuates steady ambient background noise (fans, traffic, room hum).
-  * `android.media.audiofx.AutomaticGainControl`: Normalizes human speech volume across varying distances (handheld vs pocket vs table).
+`VisionVoiceKernelV3` is the application-level microphone owner. Manual
+push-to-talk stops hands-free capture before opening its bounded recognizer and
+restores the correct wake or Smart AI state afterward.
 
-### 3.2. Offline Speech Recognition Engine (Vosk Kaldi)
-* **Model**: Bundled lightweight Kaldi acoustic model packaged directly inside Android assets.
-* **Constrained Grammar**: In hands-free mode, Vosk utilizes an optimized JSON vocabulary covering all app commands, navigation terms, reader controls, and numbers, maximizing decoding speed and accuracy on low-end processors.
-* **Continuous Streaming**: The recognizer runs as a low-overhead background thread with an Android partial wake lock, listening continuously without draining battery.
+Vosk grammar changes do not replace the private recognizer through reflection.
+The native handler calls `SpeechService.cancel()`, which interrupts and joins
+the decoder thread, then resets the same recognizer, changes its grammar, and
+restarts the service. Recognizer close/reset cannot race the active decoder
+thread through this path.
 
-### 3.3. Deterministic Command Parser (`OfflineAppCommandParser`)
-The parser evaluates normalized text against strict semantic intents while taking into account **active app route** and **vision detection status**:
+## Semantic Command Routing
 
-| Input Intent | Matched Trigger Variations | Executed Tool | Context Behavior |
-| :--- | :--- | :--- | :--- |
-| **Stop / Silence** | *"stop"*, *"quiet"*, *"silence"*, *"mute"*, *"hush"* | `stop_speaking` / `stop_mobile_mode` | In Mobile Mode: stops camera. In Scanner: halts reading in pure silence. |
-| **Scan Document** | *"scan"*, *"take picture"*, *"capture photo"*, *"read page"* | `trigger_ocr_scan` | Captures high-res photo and initiates ML Kit OCR. |
-| **Pause Reading** | *"pause"*, *"pause reading"*, *"hold on"* | `reading_pause` | Freezes document reader at current sentence index. |
-| **Resume Reading** | *"resume"*, *"continue reading"*, *"play"*, *"unpause"* | `reading_resume` | Resumes playback from exact saved sentence position. |
-| **Repeat / Rewind** | *"repeat"*, *"say again"*, *"previous sentence"*, *"last line"* | `reading_repeat` / `reading_previous` | Navigates backwards across text units. |
-| **Flashlight Toggle** | *"turn on flashlight"*, *"torch on"*, *"light on"*, *"torch off"* | `set_flashlight_enabled` | Hardware camera LED activation for low-light scanning. |
-| **App Navigation** | *"open settings"*, *"go home"*, *"open smart ai"*, *"open modes"* | `navigate_to_screen` | Safe screen transitions (locked during active document playback). |
-| **Device Utilities** | *"battery level"*, *"what time is it"*, *"what is the date"* | `get_battery_status` / `get_current_time` | Announces current phone status without internet. |
+The Dart resolver checks exact aliases, parameterized patterns, whole-word
+semantic composition, and conservative token similarity. Examples such as
+“start”, “run”, “begin”, “launch”, “activate”, and “turn on” compose with Mobile
+Mode/detection entities. Fuzzy matches require at least two shared tokens and a
+0.60 score. Unknown phrases cannot execute an app action.
 
----
+Supported areas include Mobile Mode start/stop/pause/resume/status, Scanner
+capture and reliable reader start/pause/resume/stop, first/last/numbered-line
+navigation, full-line spelling and speed controls, feedback mode, sensitivity, accessibility toggles, speech
+rate, announcement cooldown, flashlight/environment controls, app navigation,
+time/date/battery/status, and Raspberry Pi/wearable controls. Existing safety
+confirmation policy still applies where the command executor requires it.
 
-## 4. Voice Command Reference Guide
+## Smart AI and faster-whisper
 
-### 📸 Document Scanner Commands
-* *"Scan document"*, *"Scan"*, *"Take photo"*, *"Capture page"*, *"Read text"*
-* *"Pause"*, *"Pause reading"*, *"Hold on"*
-* *"Resume"*, *"Continue reading"*, *"Play"*
-* *"Repeat"*, *"Read again"*, *"Say again"*
-* *"Next"*, *"Next sentence"*, *"Next line"*
-* *"Previous"*, *"Previous sentence"*, *"Last line"*
-* *"Spell out"*, *"Spell word"*, *"Spell current"*
-* *"Restart reading"*, *"Start from beginning"*
-* *"Study mode"*, *"Slow speed"*, *"Normal speed"*, *"Fast speed"*
-* *"Copy text"*, *"Flip camera"*, *"Scan another page"*
+Wake-driven Smart AI uses the same phone-local Vosk/AudioRecord stack as the
+offline assistant. Known app commands remain deterministic and local. Only
+unmatched intentional questions are passed as text to the paired backend, which
+may use Gemini when configured and otherwise falls back to local Ollama.
 
-### 🚶 Mobile Obstacle Detection Commands
-* *"Start mobile mode"*, *"Start detection"*, *"Open camera"*
-* *"Stop mobile mode"*, *"Stop detection"*, *"Turn off vision"*
-* *"Pause detection"*, *"Resume detection"*
-* *"What is in front of me"*, *"Read recent detections"*
-* *"Outdoor mode"*, *"Indoor mode"*, *"Auto environment"*
+The repository retains a laptop faster-whisper service, but the current mobile
+voice path does not send it raw audio. Moving transcription to faster-whisper
+would add private-LAN audio transport, latency, backend dependence, and a change
+to the approved privacy boundary. An on-device Whisper runtime would also need
+separate size, speed, battery, and accuracy validation on the target TECNO BG6.
 
-### 📱 System & Utility Commands
-* *"Check battery"*, *"Battery level"*, *"Battery percentage"*, *"How much battery"*
-* *"What time is it"*, *"Tell me the time"*, *"Current time"*
-* *"What is today's date"*, *"What day is it"*, *"Today's date"*
-* *"Flashlight on"*, *"Torch on"*, *"Turn off flashlight"*
-* *"Vibration on"*, *"Turn off vibration"*, *"Audio feedback only"*
+## Verified and Still Open
 
-### 🌐 Smart AI & Remote Features
-* *"Open Smart AI"*, *"Talk to Smart AI"*, *"Ask AI"* (Switches to paired laptop backend for complex questions).
-* *"Raspberry Pi status"*, *"Connect to Raspberry Pi"*, *"Start wearable mode"*.
+Verified on 2026-08-20:
 
----
+- 312 Flutter tests passed; one Pi simulator test was intentionally gated.
+- 8 Android wake/grammar unit tests passed.
+- Split release APKs built successfully; ARM64 was installed on the TECNO BG6.
+- Changed voice files have no analyzer finding.
 
-## 5. Noise Rejection & Echo Prevention Rules
+Still open pending owner-spoken physical acceptance on the connected phone:
 
-To guarantee a frustration-free assistive experience, the assistant follows strict conversational rules:
+- intended-accent accuracy and quiet/noisy false-wake rate;
+- TV/music/fan and phone-speaker echo behavior;
+- one-wake/multiple-command/scanner/Smart AI/“bye”/“goodbye” cycles;
+- reproduction and logcat/tombstone verification of the reported app close;
+- TalkBack, permission revocation, audio focus, battery, memory, and thermal
+  acceptance.
 
-1. **Zero Spoken Echo on Stop/Quiet**: Stop commands execute **pure instant silence** without vocal confirmation (*"Speech stopped."*), preventing microphone feedback loops.
-2. **Silent Ambient Rejection**: Background speech or ambient noise that does not match an intentional app command is **silently discarded** without interrupting the user with long error lectures.
-3. **Screen Navigation Lock During Audio Output**: While text is being read aloud, navigation tools are blocked so words inside documents (like *"settings"*, *"home"*, *"safety"*) cannot trigger accidental screen switching.
-4. **Intentional Phrase Requirement**: Short isolated words like *"battery"* or *"time"* require full intent phrases (*"check battery"*, *"what is the time"*) to prevent false triggers from similar-sounding phonemes.
+Treat the assistant as an aid only. It does not replace a white cane, guide
+dog, trained human assistance, mobility training, situational awareness, or
+user judgment.

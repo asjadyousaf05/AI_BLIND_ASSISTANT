@@ -13,6 +13,7 @@ void main() {
   group('IntelligentIntentResolver - Mobile Detection Intents', () {
     const startVariations = [
       'start mobile mode',
+      'run mobile mode detection',
       'start detection',
       'start object detection',
       'start mobile detection',
@@ -86,13 +87,16 @@ void main() {
       });
     }
 
-    test('resolves bare "stop" to StopMobileDetection when in mobileDetection context', () {
-      final command = resolver.resolve(
-        'stop',
-        context: VoiceFeatureContext.mobileDetection,
-      );
-      expect(command.intent, isA<StopMobileDetection>());
-    });
+    test(
+      'resolves bare "stop" to StopMobileDetection when in mobileDetection context',
+      () {
+        final command = resolver.resolve(
+          'stop',
+          context: VoiceFeatureContext.mobileDetection,
+        );
+        expect(command.intent, isA<StopMobileDetection>());
+      },
+    );
 
     test('resolves bare "stop" to Silence when in scannerReading context', () {
       final command = resolver.resolve(
@@ -106,14 +110,20 @@ void main() {
   group('IntelligentIntentResolver - Document Scanner & Reader Intents', () {
     test('resolves scan commands and natural variations', () {
       expect(resolver.resolve('scan document').intent, isA<ScanDocument>());
-      expect(resolver.resolve('scan this document').intent, isA<ScanDocument>());
+      expect(
+        resolver.resolve('scan this document').intent,
+        isA<ScanDocument>(),
+      );
       expect(resolver.resolve('scan this page').intent, isA<ScanDocument>());
       expect(resolver.resolve('take photo').intent, isA<ScanDocument>());
       expect(resolver.resolve('take a photo').intent, isA<ScanDocument>());
       expect(resolver.resolve('take picture').intent, isA<ScanDocument>());
       expect(resolver.resolve('take a picture').intent, isA<ScanDocument>());
       expect(resolver.resolve('read this').intent, isA<ScanDocument>());
-      expect(resolver.resolve('read this document').intent, isA<ScanDocument>());
+      expect(
+        resolver.resolve('read this document').intent,
+        isA<ScanDocument>(),
+      );
       expect(resolver.resolve('read page').intent, isA<ScanDocument>());
       expect(resolver.resolve('read this page').intent, isA<ScanDocument>());
       expect(resolver.resolve('read the text').intent, isA<ScanDocument>());
@@ -123,14 +133,27 @@ void main() {
       expect(resolver.resolve('capture document').intent, isA<ScanDocument>());
       expect(resolver.resolve('rescan').intent, isA<RescanDocument>());
       expect(resolver.resolve('scan again').intent, isA<RescanDocument>());
-      expect(resolver.resolve('scan another page').intent, isA<RescanDocument>());
+      expect(
+        resolver.resolve('scan another page').intent,
+        isA<RescanDocument>(),
+      );
       expect(resolver.resolve('new scan').intent, isA<RescanDocument>());
       expect(resolver.resolve('read again').intent, isA<ReadDocumentAgain>());
     });
 
     test('resolves natural polite phrases with prefixes', () {
       expect(
-        resolver.resolve('Vision, could you please read that sentence again?').intent,
+        resolver.resolve('please scan this page').intent,
+        isA<ScanDocument>(),
+      );
+      expect(
+        resolver.resolve('could you take a picture').intent,
+        isA<ScanDocument>(),
+      );
+      expect(
+        resolver
+            .resolve('Vision, could you please read that sentence again?')
+            .intent,
         isA<ReadingRepeat>(),
       );
       expect(
@@ -153,14 +176,8 @@ void main() {
         resolver.resolve('what did you just say').intent,
         isA<ReadingRepeat>(),
       );
-      expect(
-        resolver.resolve('say that again').intent,
-        isA<ReadingRepeat>(),
-      );
-      expect(
-        resolver.resolve('read that again').intent,
-        isA<ReadingRepeat>(),
-      );
+      expect(resolver.resolve('say that again').intent, isA<ReadingRepeat>());
+      expect(resolver.resolve('read that again').intent, isA<ReadingRepeat>());
       expect(
         resolver.resolve('read that sentence again').intent,
         isA<ReadingRepeat>(),
@@ -174,29 +191,121 @@ void main() {
       expect(resolver.resolve('hold on').intent, isA<ReadingPause>());
       expect(resolver.resolve('wait a moment').intent, isA<ReadingPause>());
       expect(resolver.resolve('resume reading').intent, isA<ReadingResume>());
+      expect(resolver.resolve('start reading').intent, isA<ReadingResume>());
+      expect(resolver.resolve('begin reading').intent, isA<ReadingResume>());
+      expect(resolver.resolve('read aloud').intent, isA<ReadingResume>());
       expect(resolver.resolve('continue reading').intent, isA<ReadingResume>());
       expect(resolver.resolve('keep reading').intent, isA<ReadingResume>());
-      expect(resolver.resolve('start reading again').intent, isA<ReadingResume>());
+      expect(
+        resolver.resolve('start reading again').intent,
+        isA<ReadingResume>(),
+      );
       expect(resolver.resolve('next sentence').intent, isA<ReadingNext>());
       expect(resolver.resolve('go next').intent, isA<ReadingNext>());
-      expect(resolver.resolve('move to next sentence').intent, isA<ReadingNext>());
-      expect(resolver.resolve('read the next sentence').intent, isA<ReadingNext>());
-      expect(resolver.resolve('previous sentence').intent, isA<ReadingPrevious>());
-      expect(resolver.resolve('go back one sentence').intent, isA<ReadingPrevious>());
-      expect(resolver.resolve('read the previous sentence').intent, isA<ReadingPrevious>());
+      expect(
+        resolver.resolve('move to next sentence').intent,
+        isA<ReadingNext>(),
+      );
+      expect(
+        resolver.resolve('read the next sentence').intent,
+        isA<ReadingNext>(),
+      );
+      expect(
+        resolver.resolve('previous sentence').intent,
+        isA<ReadingPrevious>(),
+      );
+      expect(
+        resolver.resolve('go back one sentence').intent,
+        isA<ReadingPrevious>(),
+      );
+      expect(
+        resolver.resolve('read the previous sentence').intent,
+        isA<ReadingPrevious>(),
+      );
       expect(resolver.resolve('repeat sentence').intent, isA<ReadingRepeat>());
-      expect(resolver.resolve('repeat this sentence').intent, isA<ReadingRepeat>());
-      expect(resolver.resolve('repeat current sentence').intent, isA<ReadingRepeat>());
+      expect(
+        resolver.resolve('repeat this sentence').intent,
+        isA<ReadingRepeat>(),
+      );
+      expect(
+        resolver.resolve('repeat current sentence').intent,
+        isA<ReadingRepeat>(),
+      );
       expect(resolver.resolve('restart reading').intent, isA<ReadingRestart>());
-      expect(resolver.resolve('start from the beginning').intent, isA<ReadingRestart>());
+      expect(
+        resolver.resolve('start from the beginning').intent,
+        isA<ReadingRestart>(),
+      );
+      expect(resolver.resolve('first line').intent, isA<ReadingRestart>());
+      expect(resolver.resolve('read first line').intent, isA<ReadingRestart>());
+      expect(resolver.resolve('last line').intent, isA<ReadingLast>());
+      expect(resolver.resolve('final sentence').intent, isA<ReadingLast>());
       expect(resolver.resolve('spell word').intent, isA<ReadingSpell>());
       expect(resolver.resolve('spell this word').intent, isA<ReadingSpell>());
-      expect(resolver.resolve('spell current word').intent, isA<ReadingSpell>());
+      expect(
+        resolver.resolve('spell current word').intent,
+        isA<ReadingSpell>(),
+      );
       expect(resolver.resolve('spell sentence').intent, isA<ReadingSpell>());
-      expect(resolver.resolve('spell this sentence').intent, isA<ReadingSpell>());
+      expect(resolver.resolve('spell out').intent, isA<ReadingSpell>());
+      expect(
+        resolver.resolve('spell current line').intent,
+        isA<ReadingSpell>(),
+      );
+      expect(
+        resolver.resolve('spell this sentence').intent,
+        isA<ReadingSpell>(),
+      );
       expect(resolver.resolve('copy document').intent, isA<CopyScannedText>());
       expect(resolver.resolve('copy all text').intent, isA<CopyScannedText>());
-      expect(resolver.resolve('copy everything').intent, isA<CopyScannedText>());
+      expect(
+        resolver.resolve('copy everything').intent,
+        isA<CopyScannedText>(),
+      );
+    });
+
+    test('resolves numeric and spoken-number line navigation', () {
+      for (final phrase in [
+        'line 7',
+        'go to line seven',
+        'read sentence twenty one',
+        'please read line forty two',
+        'jump to the third line',
+        'go to one hundredth line',
+      ]) {
+        final command = resolver.resolve(
+          phrase,
+          context: VoiceFeatureContext.scannerReading,
+        );
+        expect(
+          command.intent,
+          isA<ReadingGoToLine>(),
+          reason: 'Failed for: $phrase',
+        );
+      }
+
+      expect(
+        (resolver
+                    .resolve(
+                      'read sentence twenty one',
+                      context: VoiceFeatureContext.scannerReading,
+                    )
+                    .intent
+                as ReadingGoToLine)
+            .lineNumber,
+        21,
+      );
+      expect(
+        (resolver
+                    .resolve(
+                      'jump to the third line',
+                      context: VoiceFeatureContext.scannerReading,
+                    )
+                    .intent
+                as ReadingGoToLine)
+            .lineNumber,
+        3,
+      );
     });
 
     test('resolves reading speed profiles', () {
@@ -220,6 +329,23 @@ void main() {
       expect(normal.intent, isA<SetReadingProfile>());
       expect((normal.intent as SetReadingProfile).profile, 'normal');
     });
+
+    test('resolves scanner camera, flashlight, and stop controls', () {
+      expect(
+        resolver.resolve('change camera').intent,
+        isA<SwitchScannerCamera>(),
+      );
+      expect(
+        resolver.resolve('turn flashlight on').intent,
+        isA<SetFlashlight>(),
+      );
+      expect(
+        resolver
+            .resolve('stop', context: VoiceFeatureContext.scannerReading)
+            .intent,
+        isA<Silence>(),
+      );
+    });
   });
 
   group('IntelligentIntentResolver - Settings and Disambiguation', () {
@@ -238,6 +364,10 @@ void main() {
     });
 
     test('resolves feedback modes', () {
+      final audio = resolver.resolve('change feedback mode to audio');
+      expect(audio.intent, isA<SetFeedbackMode>());
+      expect((audio.intent as SetFeedbackMode).mode, 'audio');
+
       final vibe = resolver.resolve('feedback mode vibration');
       expect(vibe.intent, isA<SetFeedbackMode>());
       expect((vibe.intent as SetFeedbackMode).mode, 'vibration');
@@ -261,11 +391,28 @@ void main() {
       expect(contrastSetting.enabled, isFalse);
     });
 
+    test('resolves general speech-rate and cooldown settings', () {
+      final speechRate = resolver.resolve('set speech rate to fast');
+      expect(speechRate.intent, isA<SetSpeechRate>());
+      expect((speechRate.intent as SetSpeechRate).rate, 'fast');
+
+      final cooldown = resolver.resolve(
+        'set announcement cooldown to 5 seconds',
+      );
+      expect(cooldown.intent, isA<SetAnnouncementCooldown>());
+      expect((cooldown.intent as SetAnnouncementCooldown).seconds, 5);
+    });
+
     test('resolves navigation commands', () {
       expect(resolver.resolve('open settings').intent, isA<NavigateSettings>());
       expect(resolver.resolve('go home').intent, isA<NavigateHome>());
       expect(resolver.resolve('open scanner').intent, isA<NavigateScanner>());
-      expect(resolver.resolve('talk to smart ai').intent, isA<NavigateSmartAi>());
+      expect(
+        resolver.resolve('talk to smart ai').intent,
+        isA<NavigateSmartAi>(),
+      );
+      expect(resolver.resolve('open smart ai').intent, isA<NavigateSmartAi>());
+      expect(resolver.resolve('start smart ai').intent, isA<NavigateSmartAi>());
       expect(resolver.resolve('go back').intent, isA<NavigateBack>());
     });
 
@@ -276,17 +423,40 @@ void main() {
     });
   });
 
-  group('IntelligentIntentResolver - Negative Tests (Non-command rejection)', () {
-    test('rejects empty and nonsense tokens', () {
-      expect(resolver.resolve('').intent, isA<UnknownIntent>());
-      expect(resolver.resolve('[unk]').intent, isA<UnknownIntent>());
-      expect(resolver.resolve('unk').intent, isA<UnknownIntent>());
-      expect(resolver.resolve('huh').intent, isA<UnknownIntent>());
-    });
+  group(
+    'IntelligentIntentResolver - Negative Tests (Non-command rejection)',
+    () {
+      test('rejects empty and nonsense tokens', () {
+        expect(resolver.resolve('').intent, isA<UnknownIntent>());
+        expect(resolver.resolve('[unk]').intent, isA<UnknownIntent>());
+        expect(resolver.resolve('unk').intent, isA<UnknownIntent>());
+        expect(resolver.resolve('huh').intent, isA<UnknownIntent>());
+      });
 
-    test('standalone wake phrase produces Greeting', () {
-      final cmd = resolver.resolve('hey vision ai');
-      expect(cmd.intent, isA<Greeting>());
-    });
-  });
+      test('standalone wake phrase produces Greeting', () {
+        final cmd = resolver.resolve('hey vision ai');
+        expect(cmd.intent, isA<Greeting>());
+      });
+
+      test(
+        'rejects background phrases that only contain command substrings',
+        () {
+          expect(
+            resolver.resolve('background television music').intent,
+            isA<UnknownIntent>(),
+          );
+          expect(
+            resolver.resolve('brunch discussion').intent,
+            isA<UnknownIntent>(),
+          );
+        },
+      );
+
+      test('recognizes common ASR spelling for leaving Smart AI', () {
+        expect(resolver.resolve('bye').intent, isA<DismissAssistant>());
+        expect(resolver.resolve('by').intent, isA<DismissAssistant>());
+        expect(resolver.resolve('good bye').intent, isA<DismissAssistant>());
+      });
+    },
+  );
 }

@@ -1,6 +1,6 @@
 # Build and Run
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-08-20
 
 ## Verified Project Environment
 
@@ -111,8 +111,42 @@ flutter --no-version-check analyze
 flutter --no-version-check test
 ```
 
-Latest result: formatting clean, analyzer clean, 202 Flutter tests passed with
-one Pi cross-process test skipped, and 5 native wake/parser tests passed.
+Module 57 result: analyzer clean; 319 Flutter tests passed with code-free Pi
+cross-process enrollment enabled; Pi Ruff and all 15 Pi tests passed; the app-native
+Gradle unit task and split release build passed. The ARM64 release was installed
+over the matching signed build on TECNO BG6 as version `1.4.2` / code `4042`.
+The aggregate Gradle unit-test command still needs Java 21 for third-party
+CameraX Robolectric tests under SDK 36; app-native tests pass under Java 17.
+Physical Pi, phone-audio, voice and accessibility verification remains open.
+
+## Raspberry Pi Local Connection
+
+Wearable Mode is prefilled with `10.141.17.148` and service port `8765`.
+Internet access is not required, but phone and Pi must be on one non-isolated
+private LAN. Verify reachability before enrollment:
+
+```bash
+ping -c 3 10.141.17.148
+nc -G 3 -zv 10.141.17.148 8765
+```
+
+On the Pi, start the matching service. The reviewed production environment has
+`AIBA_ALLOW_FIRST_CLIENT_ENROLLMENT=true`:
+
+```bash
+sudo systemctl restart ai-blind-assistant-pi.service
+sudo systemctl status ai-blind-assistant-pi.service --no-pager
+```
+
+In the app, open Raspberry Pi Mode and tap `Connect & Start Detection`; a fresh
+install automatically uses `10.141.17.148:8765`. Use `Use This Address` only if
+the Pi's address changes. An unclaimed Pi enrolls this phone without a code,
+the credential is saved through Android Keystore, and later connections remain
+automatic. The app does not request or store an SSH password. Priority alerts
+use the connected phone speaker, with Pi-local speech as the disconnect
+fallback. If another active credential already exists, reset it locally with
+`sudo -u aiba /opt/ai-blind-assistant/venv/bin/ai-blind-pi revoke all` before
+retrying on an owner-controlled private LAN.
 
 ## Build Android ARM64 Debug APK
 
@@ -243,12 +277,14 @@ Do not add `--no-pub` to this release command after a debug/test dependency
 refresh. Flutter must regenerate the release plugin registrant so the dev-only
 `integration_test` plugin is excluded.
 
-Result: passed. Original artifact:
-`mobile_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`. Final
-shareable copy: `deliverables/AI-Blind-Assistant.apk`. The release is ARM64-only,
-97,185,174 bytes, zipaligned, and v2 signed. Its metadata is package
-`com.example.ai_blind_assistant`, version `1.3.3`, split version code `2011`,
-min SDK 24, and target SDK 36. Verify the adjacent SHA-256 file before sharing.
+Module 57 result: passed. Current installed artifact:
+`mobile_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`. It is
+125,769,244 bytes with SHA-256
+`a4ab50e4ef27c73104eec96c11854dbb088a5e407ecf175eb87d8abbf6a8717c`.
+Its metadata is package `com.example.ai_blind_assistant`, version `1.4.2`,
+ABI-adjusted split code `4042`, min SDK 24, and target SDK 36. The older
+checksummed `deliverables/AI-Blind-Assistant.apk` is deliberately unchanged;
+copy/rename the current candidate only through the release-delivery workflow.
 
 ## Troubleshooting
 
@@ -258,7 +294,7 @@ min SDK 24, and target SDK 36. Verify the adjacent SHA-256 file before sharing.
 | Model load error | Rerun the exporter, confirm all three model assets exist, rebuild, and compare metadata/hash. |
 | Camera permission permanently denied | Use the app's Open Settings action and enable Camera manually. |
 | Camera permission is granted but startup fails | Install the current APK and read the displayed CameraX code. Close other camera apps, enable Android's global Camera access toggle, then Retry. The app tries every reported rear camera before failing. |
-| Phone says no speech-recognition service is installed | Install `1.3.3` or newer. It bundles Vosk and needs no vendor speech service. Grant Microphone once, keep the app foregrounded/unlocked, and enable “Listen for Hey Vision AI”. |
+| Phone says no speech-recognition service is installed | Install `1.4.1` or newer. It bundles Vosk and needs no vendor speech service. Grant Microphone once, keep the app foregrounded/unlocked, and enable “Listen for Hey Vision AI”. |
 | “Hey Vision AI” stops responding | Unlock and return the app to the foreground. Confirm Android's microphone indicator and the hands-free setting. Listening intentionally stops on lock/background and restarts on resume. |
 | General conversation reports laptop unavailable | Start backend/Ollama, keep both devices on the same trusted private LAN, validate the private host and port 8765, then pair with a fresh code. App controls do not need this. |
 | Gemini is unavailable | Check `/health` without printing a key. The request should use Ollama; verify Ollama and its model are running. |

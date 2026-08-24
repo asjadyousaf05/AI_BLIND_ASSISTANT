@@ -219,6 +219,18 @@ abstract final class VoiceActionRegistry {
       allowedContexts: {VoiceFeatureContext.scannerReading},
       interruptsTts: true,
     ),
+    ReadingLast: const VoiceActionDefinition(
+      intentType: ReadingLast,
+      canonicalName: 'reading_last',
+      allowedContexts: {VoiceFeatureContext.scannerReading},
+      interruptsTts: true,
+    ),
+    ReadingGoToLine: const VoiceActionDefinition(
+      intentType: ReadingGoToLine,
+      canonicalName: 'reading_go_to_line',
+      allowedContexts: {VoiceFeatureContext.scannerReading},
+      interruptsTts: true,
+    ),
     ReadingSpell: const VoiceActionDefinition(
       intentType: ReadingSpell,
       canonicalName: 'reading_spell',
@@ -233,7 +245,10 @@ abstract final class VoiceActionRegistry {
     SwitchScannerCamera: const VoiceActionDefinition(
       intentType: SwitchScannerCamera,
       canonicalName: 'switch_scanner_camera',
-      allowedContexts: {VoiceFeatureContext.scannerCapture},
+      allowedContexts: {
+        VoiceFeatureContext.scannerCapture,
+        VoiceFeatureContext.scannerReading,
+      },
     ),
     CopyScannedText: const VoiceActionDefinition(
       intentType: CopyScannedText,

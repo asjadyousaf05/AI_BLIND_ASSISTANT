@@ -37,3 +37,4 @@ def test_default_deployment_uses_dynamic_private_address_not_a_wildcard() -> Non
     environment = (ROOT / "config" / "wearable.env.example").read_text(encoding="utf-8")
     assert "AIBA_BIND_HOST=auto" in environment
     assert "AIBA_BIND_HOST=0.0.0.0" not in environment
+    assert "AIBA_ALLOW_FIRST_CLIENT_ENROLLMENT=true" in environment

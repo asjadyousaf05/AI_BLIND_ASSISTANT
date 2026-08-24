@@ -136,18 +136,13 @@ class PairingManager:
                 challenge["attemptsRemaining"] = max(0, attempts - 1)
                 outcome.update(code="PAIRING_CODE_INVALID", message="pairing code is invalid")
                 return
-            credentials = state_to_update.setdefault("credentials", {})
-            if len(credentials) >= 8:
-                oldest = min(credentials, key=lambda key: credentials[key].get("createdAt", 0))
-                del credentials[oldest]
-            credentials[credential_id] = {
-                "verifier": _b64(verifier),
-                "clientId": client_id,
-                "displayName": display_name[:80],
-                "createdAt": now_ms(),
-                "lastUsedAt": None,
-                "revoked": False,
-            }
+            self._store_credential(
+                state_to_update,
+                credential_id=credential_id,
+                verifier=verifier,
+                client_id=client_id,
+                display_name=display_name,
+            )
             state_to_update["pairingChallenge"] = None
             outcome["paired"] = "true"
 
@@ -158,6 +153,71 @@ class PairingManager:
                 outcome.get("message", "pairing could not be completed"),
             )
         return credential_id, token
+
+    def enroll_first_client(self, *, client_id: str, display_name: str) -> tuple[str, str]:
+        """Atomically enroll the only trusted phone without a displayed code.
+
+        Enrollment is available only while no non-revoked credential exists.
+        The server separately gates this operation to private-LAN peers and an
+        explicit deployment setting. Later sessions still require nonce-bound
+        HMAC authentication with the generated per-phone credential.
+        """
+        credential_id = str(uuid.uuid4())
+        token = _b64(secrets.token_bytes(32))
+        verifier = derive_auth_key(token)
+        outcome: dict[str, str] = {}
+
+        def mutate(state_to_update: dict[str, Any]) -> None:
+            credentials = state_to_update.setdefault("credentials", {})
+            has_active_credential = any(
+                isinstance(value, dict) and not bool(value.get("revoked", False))
+                for value in credentials.values()
+            )
+            if has_active_credential:
+                outcome.update(
+                    code="ENROLLMENT_CLOSED",
+                    message="a trusted phone is already enrolled",
+                )
+                return
+            self._store_credential(
+                state_to_update,
+                credential_id=credential_id,
+                verifier=verifier,
+                client_id=client_id,
+                display_name=display_name,
+            )
+            state_to_update["pairingChallenge"] = None
+            outcome["enrolled"] = "true"
+
+        self.store.update(mutate)
+        if outcome.get("enrolled") != "true":
+            raise ProtocolError(
+                outcome.get("code", "ENROLLMENT_CLOSED"),
+                outcome.get("message", "trusted enrollment is unavailable"),
+            )
+        return credential_id, token
+
+    @staticmethod
+    def _store_credential(
+        state: dict[str, Any],
+        *,
+        credential_id: str,
+        verifier: bytes,
+        client_id: str,
+        display_name: str,
+    ) -> None:
+        credentials = state.setdefault("credentials", {})
+        if len(credentials) >= 8:
+            oldest = min(credentials, key=lambda key: credentials[key].get("createdAt", 0))
+            del credentials[oldest]
+        credentials[credential_id] = {
+            "verifier": _b64(verifier),
+            "clientId": client_id,
+            "displayName": display_name[:80],
+            "createdAt": now_ms(),
+            "lastUsedAt": None,
+            "revoked": False,
+        }
 
     def authenticate(
         self,

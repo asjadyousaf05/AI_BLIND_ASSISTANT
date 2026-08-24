@@ -1,12 +1,12 @@
 # Voice and AI Assistant
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-08-20
 
 ## Scope and Safety Boundary
 
 The assistant is a foreground, hands-free in-app assistant. After the user opens
 AI Blind Assistant and grants Microphone once, it listens locally for “Hey
-Vision AI”, answers through TTS, and controls allow-listed app
+Vision AI” or “Hi Vision AI”, answers through TTS, and controls allow-listed app
 functions without requiring another screen touch. It is not an Android
 system-wide assistant: listening pauses when the app is backgrounded or the
 phone is locked. It is not an emergency service, navigation authority, or a
@@ -25,9 +25,13 @@ Android 12+'s dedicated on-device recognizer and falls back to the same bundled
 Vosk model. The app deliberately never uses Android's ordinary recognizer,
 because that implementation may use a remote server. The in-memory transcript
 enters the deterministic phone command matcher before any optional AI provider
-is considered. While idle, Vosk uses a small wake-only grammar for reliable
-accent/noise handling. After activation it switches to the default full graph
-for a bounded free-speech command window, then switches back to wake-only mode.
+is considered. While idle, Vosk uses a small wake-only grammar and accepts only
+a finalized, complete branded phrase. It does not activate from a partial
+hypothesis, standalone “Vision”, generic speech, or `[unk]`. After activation it
+switches to a focused app-command or scanner grammar and keeps that foreground
+command session active until an explicit “goodbye”, “bye”, or “stop listening”.
+On the Smart AI screen, the same Vosk input uses its conversation graph until
+“bye”/“by” returns to the still-active offline command session.
 
 ## Runtime Design
 
@@ -41,14 +45,15 @@ typed app command
 foreground hands-free voice
   -> Android RECORD_AUDIO permission
   -> bundled Vosk English speech model
-  -> focused local “Hey Vision AI” activation grammar
-  -> spoken acknowledgement
-  -> bounded full-vocabulary command window
+  -> focused local “Hey/Hi Vision AI” final-result activation grammar
+  -> spoken “Listening.” acknowledgement
+  -> persistent focused app-command/scanner grammar until explicit goodbye
   -> in-memory transcript; no app audio file and no raw-audio upload
   -> on-phone deterministic command matcher
        -> strict allow-listed tool -> explicit confirmation when required
        -> Flutter Riverpod controller -> verify resulting real state
-     or
+     or, on the Smart AI screen only
+       -> default Vosk conversation graph using the same microphone path
        -> unmatched general-conversation text only
        -> optional authenticated laptop on trusted LAN
        -> Gemini when a key is configured and reachable
@@ -61,9 +66,11 @@ manual press/hold remains available
   -> same deterministic routing and confirmation policy
 ```
 
-The phone matcher is authoritative for basic app controls. A typed or spoken
-general-conversation request that is not a known app command may use the paired
-backend; it does not silently pretend to have offline conversational reasoning.
+The phone matcher is authoritative for basic app controls. On the Smart AI
+screen, a typed or wake-driven spoken general-conversation request that is not
+a known app command may use the paired backend; it does not silently pretend to
+have offline conversational reasoning. Outside Smart AI, unmatched ambient
+speech is rejected instead of being sent to a provider.
 If no backend is paired, the app explains that app controls remain available.
 
 The model never executes code, shell commands, arbitrary URLs, filesystem
@@ -147,15 +154,16 @@ The foreground interaction follows the repeatable pattern used by established
 assistants while respecting this app's narrower Android boundary:
 
 1. Ready: the open app displays/listens for one distinct branded phrase.
-2. Invoke: say “Hey Vision AI”.
-3. Acknowledge: Vision AI says “Yes, I'm listening.
-   How can I help?” and opens a bounded command window.
+2. Invoke: say “Hey Vision AI” or “Hi Vision AI”.
+3. Acknowledge: Vision AI says “Listening.” and opens a foreground command
+   session.
 4. Resolve: recognized app controls execute through deterministic tools;
    unmatched conversation uses the optional Gemini-first/Ollama-fallback path.
 5. Confirm: a sensitive change stays pending and accepts spoken
    “confirm”/“yes” or “cancel”/“no”.
 6. Reply: Vision AI speaks a short, real result, clears buffered wake/TTS audio,
-   and returns to ready state.
+   and resumes the current contextual command grammar. “Goodbye” ends the
+   offline session; Smart AI “bye” returns to that active offline session.
 
 This mirrors Siri's documented wake-phrase-plus-request pattern and Voice
 Access's spoken-command/automatic-listening loop. A distinct phrase and paused
@@ -197,9 +205,13 @@ private network; do not port-forward or expose port 8765 to the internet.
 
 - Grant Microphone once from Assistant Settings or the manual voice control.
 - Foreground hands-free voice is enabled by default after permission is granted.
-- Say “Hey Vision AI”; after “Yes, I'm listening. How can I help?”, say the
-  command. The separate acknowledgement-first flow is intentional: the idle
-  recognizer uses a restricted wake grammar, then changes to full vocabulary.
+- Say “Hey Vision AI” or “Hi Vision AI” once; after “Listening.”, give commands
+  without repeating the wake phrase. The idle recognizer uses a restricted wake
+  grammar, then keeps a focused contextual grammar active until “goodbye”.
+  Smart AI temporarily changes to the default conversation graph.
+- Say “Open Smart AI” or “Start Smart AI” to enter paired conversation. Known
+  app controls remain local. Say “bye”/“by” to leave Smart AI and resume the
+  active offline command listener. Say “goodbye” again to end that session.
 - Confirmation is voice-operable: say “confirm”/“yes” or “cancel”/“no”.
 - The app keeps the screen awake while foregrounded. Backgrounding or locking
   the phone stops listening and discards any unfinished transcript; returning
@@ -215,26 +227,23 @@ private network; do not port-forward or expose port 8765 to the internet.
 
 ## Verification and Remaining Physical Work
 
-Automated evidence covers bundled-model/native-channel contracts, absence of a
-remote voice fallback, foreground lifecycle serialization, wake-event routing,
-spoken confirmation, unpaired command execution, provider fallback, text-only
-Gemini payloads, strict tool validation, credential secure storage, assistant
-routes, 2× text scaling, and full Flutter/backend regression suites. ARM64
-`1.3.3`/`2011` builds, is v2-signed, and is installed on the TECNO BG6. Android
-confirmed the bundled model unpacked and opened a real 16 kHz
-`VOICE_RECOGNITION` capture session; the prior “no installed speech recognition
-service” failure is resolved. The installed release also logged successful
-construction of the seven-entry wake grammar with no missing vocabulary words.
-Release 1.3.3 additionally fixes the Vosk result contract: n-best mode had moved
-final text into `alternatives[]` while the handler read only `text`. N-best is
-now disabled and both shapes are parsed defensively. A physical typed offline
-capability reply entered Speaking state and produced real Google TTS playback.
+Module 55 automated evidence covers strict wake matching, persistent command
+sessions, contextual Scanner grammar, reliable reader transport and direct-line
+actions, semantic aliases, unknown/noise rejection, one-microphone ownership,
+Smart AI return behavior, accessible Scanner UI, and the existing regression
+suite. All 312 Flutter tests passed with one gated Pi skip; 8 native
+wake/grammar tests passed; split release APKs built and the
+ARM64 build was installed on the connected TECNO BG6. Static analysis has no
+changed-voice-file finding and still reports 6 unrelated pre-existing
+user-work findings.
 
-Still required before a production claim: repeated real-speaker wake/command
-accuracy in the intended accent/noise conditions, microphone denial/revocation,
-TalkBack focus and spoken confirmation, TTS/audio focus, sustained battery and
-thermal behavior, and WAN-disabled sessions. Raspberry Pi hardware and live
-Gemini-key acceptance remain separate gates.
+Still required before a production claim: repeated real-speaker wake,
+multi-command, and numbered-line accuracy in the intended accent/noise
+conditions; reproduction of the prior unexpected close with app-scoped
+logcat/tombstone capture; microphone
+denial/revocation, TalkBack, TTS/audio focus, repeated grammar changes, sustained
+battery/thermal behavior, and WAN-disabled sessions. This implementation is
+not claimed to match proprietary Siri/Google recognition accuracy.
 
 ## Research Basis
 

@@ -110,32 +110,43 @@ void main() {
       expect(player.status, PlaybackStatus.completed);
     });
 
-    test('pauses and resumes from exact sentence position', () async {
+    test('pauses and resumes reading', () async {
       player.load('First line. Second line. Third line.');
       await player.pause();
       expect(player.status, PlaybackStatus.paused);
       expect(speech.stopCalls, 1);
+
+      await player.resume();
+      expect(speech.spokenTexts, [
+        'First line.',
+        'Second line.',
+        'Third line.',
+      ]);
+      expect(player.status, PlaybackStatus.completed);
     });
 
-    test(
-      'previous, next, and repeat navigations step through sentences',
-      () async {
-        player.load('Line one. Line two. Line three.');
-        expect(player.currentIndex, 0);
+    test('direct line navigation reads from the requested line', () async {
+      player.load('Line one. Line two. Line three.');
+      await player.readLine(2);
+      expect(speech.spokenTexts, ['Line two.', 'Line three.']);
 
-        await player.next();
-        expect(player.currentIndex, 1);
+      speech.spokenTexts.clear();
+      player.load('Line one. Line two. Line three.');
+      await player.readLast();
+      expect(speech.spokenTexts, ['Line three.']);
+    });
 
-        await player.next();
-        expect(player.currentIndex, 2);
+    test('spellCurrent spells the complete current reading line', () async {
+      player.load('Read this whole line. Another line.');
 
-        await player.previous();
-        expect(player.currentIndex, 1);
+      await player.spellCurrent();
 
-        await player.repeat();
-        expect(player.currentIndex, 1);
-      },
-    );
+      expect(
+        speech.spokenTexts.single,
+        'R, E, A, D, T, H, I, S, W, H, O, L, E, L, I, N, E',
+      );
+      expect(player.status, PlaybackStatus.paused);
+    });
 
     test('changing reading profile updates speech rate and pacing', () async {
       player.load('Test profile sentence.');

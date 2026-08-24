@@ -1,6 +1,6 @@
 # Wearable Protocol v1
 
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-20
 
 ## Scope
 
@@ -12,7 +12,7 @@ service.
 
 The service name is `_aiba-wearable._tcp`, the default WebSocket path is
 `/wearable/v1`, and the protocol version is integer `1`. Host and port come
-from mDNS, a saved paired device, or validated manual entry; no address is the
+from mDNS, a saved trusted device, or validated manual entry; no address is the
 sole supported address.
 
 ## Envelope
@@ -36,37 +36,41 @@ Every message is UTF-8 JSON no larger than 65,536 bytes:
 - `timestamp` is UTC ISO 8601. Authenticated commands outside the configured
   clock-skew window are rejected.
 - `sequence` is monotonic per connection for ordered event handling.
-- `authenticationTag` is omitted only for `hello`, `pair_request`, and
-  `pair_result`. The `authentication` request and its acknowledgement are
+- `authenticationTag` is omitted only for `hello`, `enrollment_request`,
+  `enrollment_result`, and the legacy `pair_request` / `pair_result`. The
+  `authentication` request and its acknowledgement are
   signed with the credential-derived key and the fresh hello nonce.
 - Unknown envelope and payload fields are rejected in protocol v1. Missing,
   invalid, oversized, or unknown message types receive a
   structured error and do not crash the service.
 
-## Negotiation, pairing, and authentication
+## Negotiation, enrollment, and authentication
 
 1. The Pi sends `hello` with its device identity, supported versions,
    capabilities, service version, a fresh random nonce, and whether the device
-   already has paired clients.
-2. The client either sends `pair_request` with the locally displayed,
-   short-lived pairing code and a random client identity, or sends
-   `authentication` with its credential identifier, timestamp, and an
-   HMAC-SHA256 proof bound to the server nonce and message ID. Both peers use
+   already has an active trusted client.
+2. On an explicitly configured, unclaimed Pi, the first phone sends
+   `enrollment_request` with its random installation identity. The operation is
+   accepted only from a private/loopback peer while no non-revoked credential
+   exists. It is atomic, so simultaneous phones cannot both enroll.
+3. `enrollment_result` returns one random revocable credential. Android stores
+   it using a non-exportable Keystore AES-GCM key; the Pi stores only the
+   protected credential verifier in its owner-readable state directory.
+4. Later connections send `authentication` with the credential identifier and
+   an HMAC-SHA256 proof bound to the server nonce and message ID. Both peers use
    `SHA-256(base64url-decoded credential secret)` as the HMAC key, allowing the
    Pi to retain only that derived verifier.
-3. `pair_result` returns a random revocable credential once. Android stores it
-   using a non-exportable Keystore AES-GCM key; the Pi stores only the protected
-   credential verifier in its owner-readable state directory.
-4. Successful authentication establishes the credential used to authenticate
+5. Successful authentication establishes the credential used to authenticate
    every later envelope. Invalid/expired codes, unknown/revoked credentials,
    bad tags, stale timestamps, duplicate message IDs, and replayed challenges
    are rejected.
 
-Pairing codes and credentials are never written to logs. Pairing-code creation
-is an owner command on the Pi, not a remotely callable unauthenticated API.
-The pairing code is eight characters from
-`23456789ABCDEFGHJKLMNPQRSTUVWXYZ`, expires after 30–900 seconds, and is locked
-after five failed attempts.
+`AIBA_ALLOW_FIRST_CLIENT_ENROLLMENT` defaults off in code and is enabled
+explicitly by the reviewed production environment. Enrollment closes as soon
+as one active credential exists. The owner must run local `revoke all` to
+reopen it if a phone credential is lost. Legacy short-code messages remain for
+protocol compatibility but are not exposed by the production Flutter UI.
+Neither the Linux username nor password is sent, stored, or packaged.
 
 ### Canonical authentication data
 
@@ -94,8 +98,9 @@ not the returned secret.
 | Type | Direction | Purpose / required behavior |
 |---|---|---|
 | `hello` | Pi → phone | Version/capability negotiation and fresh authentication nonce. |
-| `pair_request` | phone → Pi | First-time client identity plus short-lived local code. |
-| `pair_result` | Pi → phone | Pairing success/failure; returns credential once on success. |
+| `enrollment_request` | phone → Pi | First-phone identity; accepted only on an enabled, private-LAN, unclaimed Pi. |
+| `enrollment_result` | Pi → phone | Exclusive enrollment result; returns a random credential once on success. |
+| `pair_request` / `pair_result` | phone ↔ Pi | Legacy owner-code compatibility; unused by the production Flutter UI. |
 | `revoke_credential` | phone → Pi | Revoke the authenticated client before local Forget Device cleanup. |
 | `authentication` | phone ↔ Pi | Challenge proof and authenticated-session result. |
 | `heartbeat` | either | Authenticated `ping`/`pong` liveness with optional `replyTo`. |
@@ -137,18 +142,22 @@ twice.
   "priority": 78,
   "alertCategory": "mobility_hazard",
   "relativeProximity": "very_close",
-  "feedbackTarget": "pi",
-  "piAnnounced": true
+  "feedbackTarget": "phone",
+  "piAnnounced": false
 }
 ```
 
 Coordinates are normalized to the captured frame. Direction is
 `left`, `center`, or `right`. Priority is a documented visual heuristic based
 on class, centrality, and apparent box area. It is not distance in metres.
-The current wearable policy keeps the Pi as the feedback owner, allowing local
-speech to continue when the phone disconnects without duplicate phone speech.
-`relativeProximity`, when present, is explicitly an uncalibrated box-area
-heuristic and never a physical-distance estimate.
+Ordinary `detection_event` telemetry uses `feedbackTarget: "none"`. After the
+Pi stability, cooldown, and rate gates choose one priority alert, the policy
+uses `feedbackTarget: "phone"` only while an authenticated phone is connected.
+Flutter then routes the signed/deduplicated event through its single voice/TTS
+owner. When no authenticated phone is connected, the priority event uses
+`feedbackTarget: "pi"` and Pi-local speech. `piAnnounced` prevents duplicate
+speech. `relativeProximity`, when present, is explicitly an uncalibrated
+box-area heuristic and never a physical-distance estimate.
 
 ## Settings ownership and conflicts
 
@@ -168,19 +177,22 @@ snapshot never silently overwrites a newer accepted snapshot.
   battery-draining tight loop.
 - Detection events are best-effort compact telemetry. Commands and settings
   have acknowledgements; the project does not claim zero event loss.
-- The Pi keeps running and owns essential local speech if the phone backgrounds
-  or disconnects. Phone lifecycle disconnect is not interpreted as a stop
-  command.
+- The Pi keeps running if the phone backgrounds or disconnects. Phone lifecycle
+  disconnect is not interpreted as a stop command; feedback ownership falls
+  back from phone to Pi-local speech.
 
 ## Security boundary
 
 Protocol v1 uses `ws://` plus application-level HMAC authentication, integrity,
 fresh nonces, timestamps, sequence checks, and replay rejection. It does not
 provide transport confidentiality: another device controlling the same LAN may
-observe addresses, message sizes, and potentially message contents, and the
-first pairing exchange must occur on a trusted private LAN. The service must be
-bound to the intended private interface and protected by the host firewall; it
-must not be port-forwarded or exposed to the public internet.
+observe addresses, message sizes, and potentially message contents. Code-free
+first enrollment is trust-on-first-use: another client on the same LAN could
+claim an unclaimed Pi first. Perform it on an isolated owner-controlled
+router/hotspot, verify the intended Pi endpoint, and do not leave an unclaimed
+service exposed. The service must be bound to the intended private interface
+and protected by the host firewall; it must not be port-forwarded or exposed
+to the public internet.
 
 No global TLS validation bypass is present. A future TLS upgrade must use a
 properly validated or explicitly pinned device certificate and can preserve

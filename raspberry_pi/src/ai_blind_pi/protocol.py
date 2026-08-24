@@ -23,6 +23,8 @@ MESSAGE_TYPES = frozenset(
         "authentication",
         "heartbeat",
         "device_status",
+        "enrollment_request",
+        "enrollment_result",
         "pair_request",
         "pair_result",
         "revoke_credential",

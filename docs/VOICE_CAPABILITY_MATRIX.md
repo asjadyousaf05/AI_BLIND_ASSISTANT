@@ -37,15 +37,17 @@ This matrix maps every user-facing application function in **AI Blind Assistant 
 | `ScanDocument` | `SCAN + SCANNER` | "scan document", "take photo", "read document", "read text", "capture document", "read page", "scan page", "capture", bare "scan" (in Scanner Capture) | `scannerCapture`, `scannerReading`, `home` | Triggers OCR capture & ML Kit text extraction |
 | `RescanDocument` | `RESCAN + SCANNER` | "scan again", "scan another page", "rescan", "new scan", "try again" | `scannerCapture`, `scannerReading` | Resets OCR buffer, prepares camera for next page |
 | `ReadDocumentAgain` | `READ_AGAIN + SCANNER` | "read again", "read text again", "read document again", "repeat text" | `scannerReading`, `scannerCapture` | Restarts sentence reading from beginning |
-| `ReadingPause` | `PAUSE + READING` | "pause reading", "pause audio", "pause speech", "hold on", bare "pause" (in Scanner Reading) | `scannerReading` | Pauses TTS reading head at current sentence |
-| `ReadingResume` | `RESUME + READING` | "resume reading", "continue reading", "keep reading", "play", "unpause", bare "resume" (in Scanner Reading) | `scannerReading` | Resumes sentence reading from paused sentence |
+| `ReadingPause` | `PAUSE + READING` | "pause reading", "pause audio", "pause speech", "hold on", bare "pause" (in Scanner Reading) | `scannerReading` | Pauses TTS while preserving the current reading line |
+| `ReadingResume` | `RESUME + READING` | "start reading", "begin reading", "read aloud", "resume reading", "continue reading", "keep reading", "play", "unpause", bare "resume" (in Scanner Reading) | `scannerReading` | Starts/resumes audible reading from the selected line; completed documents restart from line 1 |
 | `ReadingNext` | `NEXT + SENTENCE` | "next", "next sentence", "next line", "read next", "skip line", "skip ahead", "forward" | `scannerReading` | Advances reader head to next sentence |
-| `ReadingPrevious` | `PREVIOUS + SENTENCE` | "previous", "previous sentence", "previous line", "read previous", "last sentence", "rewind", "go back" | `scannerReading` | Moves reader head to previous sentence |
+| `ReadingPrevious` | `PREVIOUS + SENTENCE` | "previous", "previous sentence", "previous line", "read previous", "rewind", "go back" | `scannerReading` | Reads from the previous reading line |
 | `ReadingRepeat` | `REPEAT + SENTENCE` | "repeat", "repeat sentence", "repeat line", "say line again", "say again", "again", "one more time" | `scannerReading` | Repeats current sentence |
-| `ReadingRestart` | `RESTART + READING` | "restart", "start over", "read from beginning", "start from start", "from the beginning", "from the top" | `scannerReading` | Jumps reading head to sentence 0 |
-| `ReadingSpell` | `SPELL + WORD` | "spell", "spell out", "spell this", "spell word", "spell sentence", "read letter by letter" | `scannerReading` | Spells active word letter-by-letter |
+| `ReadingRestart` | `RESTART + READING` | "first line", "read first line", "restart", "start over", "read from beginning", "from the beginning", "from the top" | `scannerReading` | Reads from line 1 |
+| `ReadingLast` | `LAST + READING` | "last line", "final line", "read last line", "go to the last line", "end of document", "bottom of document" | `scannerReading` | Reads the final reading line |
+| `ReadingGoToLine` | `GOTO + LINE_NUMBER` | "line 5", "go to line five", "read sentence twenty one", "jump to the third line" | `scannerReading` | Reads from a one-based line target; native focused speech covers 1-100 and Dart accepts 1-999 |
+| `ReadingSpell` | `SPELL + READING_LINE` | "spell", "spell out", "spell this line", "spell current line", "read letter by letter" | `scannerReading` | Spells the complete current reading line letter-by-letter |
 | `SetReadingProfile` | `SET + READING_PROFILE` | "study mode", "learning mode", "slow down", "fast mode", "skim mode", "speed up", "normal speed", "normal mode" | `scannerReading` | Adjusts TTS speed & sentence boundaries |
-| `SwitchScannerCamera` | `SET + SCANNER_CAMERA` | "switch camera", "flip camera", "change camera", "front camera", "back camera" | `scannerCapture` | Toggles rear / front camera |
+| `SwitchScannerCamera` | `SET + SCANNER_CAMERA` | "switch camera", "flip camera", "change camera", "front camera", "back camera" | `scannerCapture`, `scannerReading` | Toggles rear / front camera |
 | `CopyScannedText` | `COPY + TEXT` | "copy text", "copy to clipboard", "copy result", "copy document" | `scannerReading`, `scannerCapture` | Copies full OCR document text to system clipboard |
 
 ---
@@ -77,7 +79,7 @@ This matrix maps every user-facing application function in **AI Blind Assistant 
 | `SetBooleanSetting` | `large_text` | "turn on large text", "make text bigger", "disable large text" | Updates UI typography scale |
 | `SetBooleanSetting` | `reduced_motion` | "turn on reduced motion", "disable animations", "turn off reduced motion" | Disables UI transitions |
 | `SetBooleanSetting` | `vibration` | "turn on vibration", "enable haptics", "turn off vibration", "disable haptics" | Toggles phone vibration engine |
-| `SetBooleanSetting` | `hands_free` | "turn on hands free", "enable wake word", "turn off hands free" | Toggles background wake listener |
+| `SetBooleanSetting` | `hands_free` | "turn on hands free", "enable wake word", "turn off hands free" | Toggles the foreground in-app wake listener |
 | `SetFlashlight` | `enabled` (bool) | "turn on flashlight", "torch on", "light on", "turn off flashlight", "torch off", "light off" | Controls rear camera LED |
 | `SetSpeechRate` | `fast`, `slow`, `normal` | "speak faster", "faster voice", "speak slower", "slower voice", "normal speech rate" | Updates platform TTS speed |
 | `SetAnnouncementCooldown` | `seconds` (1-30) | "cooldown 2 seconds", "alert interval 5 seconds", "set cooldown to 3 seconds" | Limits minimum interval between audio alerts |

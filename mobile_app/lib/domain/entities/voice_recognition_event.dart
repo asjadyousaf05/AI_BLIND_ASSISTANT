@@ -52,13 +52,19 @@ class VoiceRecognitionEvent {
       DateTime.now().difference(timestamp) > maxAge;
 
   @override
-  String toString() =>
-      'VoiceRecognitionEvent('
-      'id=$recognitionId, '
-      'recognizerSession=$recognizerSessionId, '
-      'commandSession=$commandSessionId, '
-      'gen=$contextGeneration, '
-      'final=$isFinal, '
-      'text="$transcript"'
-      ')';
+  String toString() {
+    final wordCount = transcript
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .length;
+    return 'VoiceRecognitionEvent('
+        'id=$recognitionId, '
+        'recognizerSession=$recognizerSessionId, '
+        'commandSession=$commandSessionId, '
+        'gen=$contextGeneration, '
+        'final=$isFinal, '
+        'words=$wordCount'
+        ')';
+  }
 }

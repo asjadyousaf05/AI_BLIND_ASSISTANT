@@ -1,6 +1,6 @@
 # Interaction Specification
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-08-20
 
 ## Global Rules
 
@@ -35,9 +35,9 @@ Last reviewed: 2026-08-14
 | Help | Next/previous/finish | Moves through native accessible guide controls. |
 | About | Review safety | Exposes privacy, offline operation, and assistive-aid limitation. |
 | Raspberry Pi | Scan/manual endpoint | Discovers NSD services or validates a private local endpoint without cloud lookup. |
-| Raspberry Pi | Pair/connect | Uses a short-lived code, Keystore credential, authenticated WebSocket and acknowledged state. |
-| Raspberry Pi | Start/pause/resume/stop | Sends acknowledged commands while the Pi owns camera, inference and essential local speech. |
-| Raspberry Pi | Retry/forget | Performs bounded recovery or revokes/removes the paired credential. |
+| Raspberry Pi | First Connect & Start | On an explicitly enabled unclaimed Pi, atomically enrolls the first private-LAN phone without a displayed code, protects its credential with Keystore, authenticates, synchronizes settings, and starts detection. |
+| Raspberry Pi | Connect/start/pause/resume/stop | Sends authenticated acknowledged commands while the Pi owns camera/inference; priority speech targets the connected phone with Pi-local disconnect fallback. |
+| Raspberry Pi | Retry/forget | Performs bounded recovery or revokes/removes the trusted-phone credential. |
 | Assistant connection | Pair laptop | Validates a private host, port and expiring code; stores the bearer through Android Keystore. |
 | Assistant | Type app command | Parses and executes the bounded command on-phone before any pairing/network check. |
 | Assistant | Type general conversation | Uses Gemini/Ollama reasoning only when the optional laptop is paired and reachable. |
@@ -74,7 +74,7 @@ limit, per-class cooldown, and duplicate suppression.
 
 ## Wearable Interactions
 
-Discovery, pairing, authentication, settings synchronization, acknowledged
+Discovery, exclusive enrollment, authentication, settings synchronization, acknowledged
 commands, heartbeat/reconnect and compact detection/health events are
 implemented. Raw frames never enter the phone transport. Pi-local speech and
 assistance remain active after simulated phone disconnect. The user can switch

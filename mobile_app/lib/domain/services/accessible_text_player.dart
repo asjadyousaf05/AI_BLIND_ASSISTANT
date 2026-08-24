@@ -216,8 +216,7 @@ class AccessibleTextPlayer {
       sentenceIndex: _currentIndex,
     );
     _status = PlaybackStatus.paused;
-    _activeSentenceCompleter?.complete();
-    _activeSentenceCompleter = null;
+    _completeActiveSentence();
     echoGuard.onTtsStop();
     await speechService.stop();
     _notifyState();
@@ -225,6 +224,10 @@ class AccessibleTextPlayer {
 
   /// Resumes playback from the exact paused sentence position.
   Future<void> resume() async {
+    if (_disposed || _document.isEmpty) return;
+    if (_status == PlaybackStatus.completed) {
+      _currentIndex = 0;
+    }
     VoiceDiagnosticLogger.readerEvent(
       event: 'RESUME',
       generation: _playGeneration,
@@ -239,22 +242,16 @@ class AccessibleTextPlayer {
     _currentWord = null;
     _currentRangeStart = 0;
     _currentRangeEnd = 0;
-    final wasPlaying = _status == PlaybackStatus.playing;
     _playGeneration++;
     VoiceDiagnosticLogger.readerEvent(
       event: 'REPEAT',
       generation: _playGeneration,
       sentenceIndex: _currentIndex,
     );
-    _activeSentenceCompleter?.complete();
-    _activeSentenceCompleter = null;
+    _completeActiveSentence();
     echoGuard.onTtsStop();
     await speechService.stop();
-    if (wasPlaying) {
-      await play();
-    } else {
-      _notifyState();
-    }
+    await play();
   }
 
   /// Advances to the next sentence.
@@ -265,27 +262,20 @@ class AccessibleTextPlayer {
       _currentWord = null;
       _currentRangeStart = 0;
       _currentRangeEnd = 0;
-      final wasPlaying = _status == PlaybackStatus.playing;
       _playGeneration++;
       VoiceDiagnosticLogger.readerEvent(
         event: 'NEXT',
         generation: _playGeneration,
         sentenceIndex: _currentIndex,
       );
-      _activeSentenceCompleter?.complete();
-      _activeSentenceCompleter = null;
+      _completeActiveSentence();
       echoGuard.onTtsStop();
       await speechService.stop();
-      if (wasPlaying) {
-        await play();
-      } else {
-        _notifyState();
-      }
+      await play();
     } else {
       _status = PlaybackStatus.completed;
       _playGeneration++;
-      _activeSentenceCompleter?.complete();
-      _activeSentenceCompleter = null;
+      _completeActiveSentence();
       echoGuard.onTtsStop();
       await speechService.stop();
       _notifyState();
@@ -295,28 +285,13 @@ class AccessibleTextPlayer {
   /// Jumps back to the previous sentence.
   Future<void> previous() async {
     if (_disposed || _document.isEmpty) return;
-    if (_currentIndex > 0) {
-      _currentIndex--;
-      _currentWord = null;
-      _currentRangeStart = 0;
-      _currentRangeEnd = 0;
-      final wasPlaying = _status == PlaybackStatus.playing;
-      _playGeneration++;
-      VoiceDiagnosticLogger.readerEvent(
-        event: 'PREVIOUS',
-        generation: _playGeneration,
-        sentenceIndex: _currentIndex,
-      );
-      _activeSentenceCompleter?.complete();
-      _activeSentenceCompleter = null;
-      echoGuard.onTtsStop();
-      await speechService.stop();
-      if (wasPlaying) {
-        await play();
-      } else {
-        _notifyState();
-      }
-    }
+    final target = _currentIndex > 0 ? _currentIndex - 1 : 0;
+    VoiceDiagnosticLogger.readerEvent(
+      event: 'PREVIOUS',
+      generation: _playGeneration + 1,
+      sentenceIndex: target,
+    );
+    await jumpToSentence(target);
   }
 
   /// Jumps directly to a specific sentence index.
@@ -327,22 +302,28 @@ class AccessibleTextPlayer {
     _currentWord = null;
     _currentRangeStart = 0;
     _currentRangeEnd = 0;
-    final wasPlaying = _status == PlaybackStatus.playing;
     _playGeneration++;
-    _activeSentenceCompleter?.complete();
-    _activeSentenceCompleter = null;
+    _completeActiveSentence();
     echoGuard.onTtsStop();
     await speechService.stop();
-    if (wasPlaying) {
-      await play();
-    } else {
-      _notifyState();
-    }
+    await play();
   }
 
   /// Restarts playback from the very first sentence.
   Future<void> restart() async {
     await jumpToSentence(0);
+  }
+
+  /// Starts reading from the final sentence.
+  Future<void> readLast() async {
+    if (_disposed || _document.isEmpty) return;
+    await jumpToSentence(_document.sentences.length - 1);
+  }
+
+  /// Starts reading from a one-based line number, clamped to the document.
+  Future<void> readLine(int lineNumber) async {
+    if (_disposed || _document.isEmpty) return;
+    await jumpToSentence(lineNumber - 1);
   }
 
   /// Stops all audio output and sets status to idle.
@@ -352,8 +333,7 @@ class AccessibleTextPlayer {
     _currentWord = null;
     _currentRangeStart = 0;
     _currentRangeEnd = 0;
-    _activeSentenceCompleter?.complete();
-    _activeSentenceCompleter = null;
+    _completeActiveSentence();
     echoGuard.onTtsStop();
     await speechService.stop();
     _notifyState();
@@ -366,7 +346,7 @@ class AccessibleTextPlayer {
     _notifyState();
   }
 
-  /// Spells out the current active word or sentence letter-by-letter.
+  /// Spells out the complete current reading line letter-by-letter.
   Future<void> spellCurrent() async {
     final sent = currentSentence;
     if (sent == null || _disposed) return;
@@ -376,9 +356,7 @@ class AccessibleTextPlayer {
     _notifyState();
     await speechService.stop();
 
-    final word =
-        _currentWord?.text ?? sent.words.firstOrNull?.text ?? sent.text;
-    final spelled = word
+    final spelled = sent.text
         .split('')
         .where((c) => RegExp(r'[A-Za-z0-9]').hasMatch(c))
         .map((c) => c.toUpperCase())
@@ -417,11 +395,18 @@ class AccessibleTextPlayer {
     }
   }
 
+  void _completeActiveSentence() {
+    final completer = _activeSentenceCompleter;
+    _activeSentenceCompleter = null;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
+  }
+
   Future<void> dispose() async {
     _disposed = true;
     _playGeneration++;
-    _activeSentenceCompleter?.complete();
-    _activeSentenceCompleter = null;
+    _completeActiveSentence();
     echoGuard.onTtsStop();
     await speechService.stop();
   }

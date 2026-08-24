@@ -29,7 +29,7 @@ EventSink = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
 class AssistanceEngine:
-    """Owns camera, inference, persisted settings and local speech.
+    """Owns camera, inference, persisted settings and feedback targeting.
 
     WebSocket clients are observers/controllers. They are deliberately not the
     owner of this object, so an active assistance pipeline continues when the
@@ -261,13 +261,20 @@ class AssistanceEngine:
                     )
                 )
                 for detection in detections[:20]:
+                    payload = detection.as_payload(
+                        source_device_id=self.device_id,
+                        frame_sequence=frame.sequence,
+                        timestamp=frame.captured_at_ms,
+                    )
+                    payload.update(
+                        {
+                            "feedbackTarget": "none",
+                            "piAnnounced": False,
+                        }
+                    )
                     await self.emit(
                         "detection_event",
-                        detection.as_payload(
-                            source_device_id=self.device_id,
-                            frame_sequence=frame.sequence,
-                            timestamp=frame.captured_at_ms,
-                        ),
+                        payload,
                     )
                 announced, target = await self.feedback.consider(
                     detections, self.settings, phone_connected=self.phone_connected

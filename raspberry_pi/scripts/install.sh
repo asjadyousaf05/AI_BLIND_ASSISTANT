@@ -167,5 +167,6 @@ fi
 
 echo "Installed AI Blind Assistant Pi service."
 echo "Bind address: $BIND_HOST"
-echo "Generate a pairing code with: sudo -u aiba $VENV_DIR/bin/ai-blind-pi pairing-code"
+echo "The first phone can enroll directly when AIBA_ALLOW_FIRST_CLIENT_ENROLLMENT=true."
+echo "Reset trusted phones with: sudo -u aiba $VENV_DIR/bin/ai-blind-pi revoke all"
 echo "Check status with: systemctl status ai-blind-assistant-pi.service"

@@ -13,8 +13,6 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.IOException
 import java.util.Locale
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -43,9 +41,11 @@ class OnDeviceSpeechRecognizerHandler(
     private var voskSpeechService: VoskSpeechService? = null
     private var activeProvider: RecognitionProvider? = null
     private var sessionMode: SessionMode? = null
-
-    // Protects concurrent access/modification of Vosk objects from audio and UI threads
-    private val voskLock = ReentrantLock()
+    private var activeDecoderProfile: VisionAiDecoderProfile? = null
+    private var requestedCommandProfile = VisionAiDecoderProfile.APP_COMMANDS
+    private var acousticEchoCanceler: android.media.audiofx.AcousticEchoCanceler? = null
+    private var noiseSuppressor: android.media.audiofx.NoiseSuppressor? = null
+    private var automaticGainControl: android.media.audiofx.AutomaticGainControl? = null
 
     private var pendingStartResult: MethodChannel.Result? = null
     private var pendingSessionMode: SessionMode? = null
@@ -61,35 +61,9 @@ class OnDeviceSpeechRecognizerHandler(
     private var voskPartialTranscript = ""
     private var awaitingHandsFreeCommand = false
     private var handsFreeWakeTimeout: Runnable? = null
-    private var partialWakeTimeout: Runnable? = null
     private var lastHandledHandsFreeTranscript: String? = null
 
     private var wakeLock: android.os.PowerManager.WakeLock? = null
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
-    private var isCallInterrupted = false
-
-    private val audioFocusChangeListener = android.media.AudioManager.OnAudioFocusChangeListener { focusChange ->
-        when (focusChange) {
-            android.media.AudioManager.AUDIOFOCUS_LOSS,
-            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                isCallInterrupted = true
-                pauseHandsFree()
-                mainHandler.post {
-                    channel.invokeMethod("onInterruptionStarted", null)
-                }
-            }
-            android.media.AudioManager.AUDIOFOCUS_GAIN -> {
-                if (isCallInterrupted) {
-                    isCallInterrupted = false
-                    resumeHandsFree(acceptNextCommand = false)
-                    mainHandler.post {
-                        channel.invokeMethod("onInterruptionEnded", null)
-                    }
-                }
-            }
-        }
-    }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
@@ -308,19 +282,18 @@ class OnDeviceSpeechRecognizerHandler(
         requestedMode: SessionMode,
     ) {
         try {
-            val createdRecognizer = Recognizer(model, VOSK_SAMPLE_RATE)
-            // Zero keeps Vosk's result contract as {"text":"..."}. A
-            // positive value moves the transcript into alternatives[], which
-            // previously made every final wake result look blank to this
-            // handler even while microphone capture was healthy.
-            createdRecognizer.setMaxAlternatives(VisionAiVoskContract.maxAlternatives)
-            createdRecognizer.setWords(false)
-            createdRecognizer.setPartialWords(false)
+            val initialProfile = if (requestedMode == SessionMode.HANDS_FREE) {
+                VisionAiDecoderProfile.WAKE
+            } else {
+                VisionAiDecoderProfile.CONVERSATION
+            }
+            val createdRecognizer = createRecognizer(model, initialProfile)
             val createdService = VoskSpeechService(createdRecognizer, VOSK_SAMPLE_RATE)
             voskRecognizer = createdRecognizer
             voskSpeechService = createdService
             activeProvider = RecognitionProvider.VOSK
             sessionMode = requestedMode
+            activeDecoderProfile = initialProfile
             val started = if (requestedMode == SessionMode.HANDS_FREE) {
                 try {
                     val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
@@ -338,33 +311,7 @@ class OnDeviceSpeechRecognizerHandler(
             if (!started) {
                 throw IllegalStateException("Vosk recognition thread did not start.")
             }
-            try {
-                val recorderField = createdService.javaClass.getDeclaredField("recorder")
-                recorderField.isAccessible = true
-                val audioRecord = recorderField.get(createdService) as? android.media.AudioRecord
-                if (audioRecord != null) {
-                    val sessionId = audioRecord.audioSessionId
-                    var aecActive = false
-                    var nsActive = false
-                    var agcActive = false
-                    if (android.media.audiofx.AcousticEchoCanceler.isAvailable()) {
-                        val aec = android.media.audiofx.AcousticEchoCanceler.create(sessionId)
-                        aec?.enabled = true
-                        aecActive = aec?.enabled == true
-                    }
-                    if (android.media.audiofx.NoiseSuppressor.isAvailable()) {
-                        val ns = android.media.audiofx.NoiseSuppressor.create(sessionId)
-                        ns?.enabled = true
-                        nsActive = ns?.enabled == true
-                    }
-                    if (android.media.audiofx.AutomaticGainControl.isAvailable()) {
-                        val agc = android.media.audiofx.AutomaticGainControl.create(sessionId)
-                        agc?.enabled = true
-                        agcActive = agc?.enabled == true
-                    }
-                    android.util.Log.d("VisionAudio", "AudioRecord initialized. session=$sessionId AEC=$aecActive NS=$nsActive AGC=$agcActive profile=$currentProfileName")
-                }
-            } catch (_: Exception) {}
+            attachAudioEffects(createdService)
             result.success(true)
         } catch (error: Exception) {
             destroyVoskSession(cancel = true)
@@ -374,6 +321,75 @@ class OnDeviceSpeechRecognizerHandler(
                 "Bundled offline speech recognition could not start.",
                 mapOf("errorType" to error.javaClass.simpleName),
             )
+        }
+    }
+
+    private fun createRecognizer(
+        model: Model,
+        profile: VisionAiDecoderProfile,
+    ): Recognizer {
+        val recognizer = Recognizer(
+            model,
+            VOSK_SAMPLE_RATE,
+            VisionAiSpeechGrammar.jsonFor(profile),
+        )
+        recognizer.setMaxAlternatives(VisionAiVoskContract.maxAlternatives)
+        recognizer.setWords(profile != VisionAiDecoderProfile.WAKE)
+        recognizer.setPartialWords(false)
+        configureEndpointer(recognizer, profile)
+        return recognizer
+    }
+
+    private fun configureEndpointer(
+        recognizer: Recognizer,
+        profile: VisionAiDecoderProfile,
+    ) {
+        when (profile) {
+            VisionAiDecoderProfile.WAKE ->
+                recognizer.setEndpointerDelays(8.0f, 0.55f, 10.0f)
+            VisionAiDecoderProfile.APP_COMMANDS,
+            VisionAiDecoderProfile.SCANNER_COMMANDS,
+            -> recognizer.setEndpointerDelays(5.0f, 0.7f, 15.0f)
+            VisionAiDecoderProfile.CONVERSATION ->
+                recognizer.setEndpointerDelays(5.0f, 0.85f, 20.0f)
+        }
+    }
+
+    private fun attachAudioEffects(service: VoskSpeechService) {
+        releaseAudioEffects()
+        try {
+            val recorderField = service.javaClass.getDeclaredField("recorder")
+            recorderField.isAccessible = true
+            val audioRecord = recorderField.get(service) as? android.media.AudioRecord ?: return
+            val sessionId = audioRecord.audioSessionId
+
+            if (android.media.audiofx.AcousticEchoCanceler.isAvailable()) {
+                acousticEchoCanceler =
+                    android.media.audiofx.AcousticEchoCanceler.create(sessionId)?.apply {
+                        enabled = true
+                    }
+            }
+            if (android.media.audiofx.NoiseSuppressor.isAvailable()) {
+                noiseSuppressor =
+                    android.media.audiofx.NoiseSuppressor.create(sessionId)?.apply {
+                        enabled = true
+                    }
+            }
+            if (android.media.audiofx.AutomaticGainControl.isAvailable()) {
+                automaticGainControl =
+                    android.media.audiofx.AutomaticGainControl.create(sessionId)?.apply {
+                        enabled = true
+                    }
+            }
+
+            android.util.Log.d(
+                "VisionAudio",
+                "Audio input ready. AEC=${acousticEchoCanceler?.enabled == true} " +
+                    "NS=${noiseSuppressor?.enabled == true} " +
+                    "AGC=${automaticGainControl?.enabled == true}",
+            )
+        } catch (_: Exception) {
+            releaseAudioEffects()
         }
     }
 
@@ -413,85 +429,98 @@ class OnDeviceSpeechRecognizerHandler(
         startVoskListening(locale, result, SessionMode.HANDS_FREE)
     }
 
-    private var pauseWatchdog: Runnable? = null
-
     private fun pauseHandsFree() {
         if (sessionMode == SessionMode.HANDS_FREE) {
             try {
                 voskSpeechService?.setPause(true)
             } catch (_: Exception) {}
-            cancelPauseWatchdog()
-            val watchdog = Runnable {
-                if (sessionMode == SessionMode.HANDS_FREE && activeProvider == RecognitionProvider.VOSK) {
-                    android.util.Log.d("VisionAudio", "HandsFree pause watchdog triggered - auto-resuming listening")
-                    resumeHandsFree(acceptNextCommand = false)
-                }
-            }
-            pauseWatchdog = watchdog
-            mainHandler.postDelayed(watchdog, 15000L)
         }
     }
 
-    private fun cancelPauseWatchdog() {
-        pauseWatchdog?.let(mainHandler::removeCallbacks)
-        pauseWatchdog = null
-    }
-
     private fun resumeHandsFree(acceptNextCommand: Boolean = false) {
-        cancelPauseWatchdog()
         if (sessionMode == SessionMode.HANDS_FREE) {
             awaitingHandsFreeCommand = acceptNextCommand
             lastHandledHandsFreeTranscript = null
-            if (acceptNextCommand) {
+            val targetProfile = if (acceptNextCommand) {
+                requestedCommandProfile
+            } else {
+                VisionAiDecoderProfile.WAKE
+            }
+            if (acceptNextCommand && targetProfile != VisionAiDecoderProfile.CONVERSATION) {
                 scheduleHandsFreeWakeTimeout()
             } else {
                 cancelHandsFreeWakeTimeout()
             }
-            // Discard any buffered wake phrase or TTS echo before accepting
-            // the next user utterance.
-            // Ensure we don't mutate the recognizer while the audio thread may be using it
-            voskLock.withLock {
-                try {
-                    voskRecognizer?.reset()
-                } catch (_: Exception) {}
-                try {
-                    voskSpeechService?.setPause(false)
-                } catch (_: Exception) {}
+
+            if (activeDecoderProfile == targetProfile) {
+                // SpeechService.reset() is thread-safe: it asks its audio
+                // thread to reset between buffers. Calling Recognizer.reset()
+                // directly here can race native decoding and crash the process.
+                voskSpeechService?.reset()
+                voskSpeechService?.setPause(false)
+            } else if (!switchHandsFreeDecoder(targetProfile)) {
+                awaitingHandsFreeCommand = false
+                channel.invokeMethod(
+                    "onHandsFreeError",
+                    mapOf("errorType" to "decoder_switch_failed"),
+                )
             }
         }
     }
 
-    private var currentProfileName: String = "normal"
-
     private fun setRecognitionProfile(profile: String) {
-        currentProfileName = profile
-        android.util.Log.d("VisionAudio", "Recognition profile set to: $profile")
-        val model = voskModel ?: return
-        if (sessionMode == SessionMode.HANDS_FREE && activeProvider == RecognitionProvider.VOSK && voskSpeechService != null) {
-            mainHandler.post {
-                try {
-                    val newRecognizer = Recognizer(model, VOSK_SAMPLE_RATE)
-                    newRecognizer.setMaxAlternatives(VisionAiVoskContract.maxAlternatives)
-                    newRecognizer.setWords(false)
-                    newRecognizer.setPartialWords(false)
-                    voskLock.withLock {
-                        voskRecognizer = newRecognizer
-                        val service = voskSpeechService
-                        if (service != null) {
-                            val recField = service.javaClass.getDeclaredField("recognizer")
-                            recField.isAccessible = true
-                            recField.set(service, newRecognizer)
-                        }
-                        lastHandledHandsFreeTranscript = null
-                        voskPartialTranscript = ""
-                        try {
-                            voskRecognizer?.reset()
-                        } catch (_: Exception) {}
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.w("VisionAudio", "Could not hot-swap recognizer grammar: $e")
-                }
+        val nextProfile = when (profile) {
+            "conversation" -> VisionAiDecoderProfile.CONVERSATION
+            "scanner_commands", "barge_in" -> VisionAiDecoderProfile.SCANNER_COMMANDS
+            else -> VisionAiDecoderProfile.APP_COMMANDS
+        }
+        requestedCommandProfile = nextProfile
+        android.util.Log.d(
+            "VisionAudio",
+            "Command decoder profile=${requestedCommandProfile.name}",
+        )
+        // A foreground command session can cross screens without another wake
+        // phrase. Switch immediately when the recognizer is already accepting
+        // commands so a touch navigation into Scanner receives its full grammar.
+        if (sessionMode == SessionMode.HANDS_FREE &&
+            awaitingHandsFreeCommand &&
+            activeDecoderProfile != nextProfile &&
+            !switchHandsFreeDecoder(nextProfile)
+        ) {
+            awaitingHandsFreeCommand = false
+            channel.invokeMethod(
+                "onHandsFreeError",
+                mapOf("errorType" to "decoder_switch_failed"),
+            )
+        }
+    }
+
+    /**
+     * Switches Vosk graphs only after SpeechService.cancel() has joined the
+     * decoder thread. This avoids reflection and concurrent native mutation.
+     */
+    private fun switchHandsFreeDecoder(targetProfile: VisionAiDecoderProfile): Boolean {
+        val service = voskSpeechService ?: return false
+        val recognizer = voskRecognizer ?: return false
+        return try {
+            service.cancel()
+            recognizer.reset()
+            recognizer.setGrammar(VisionAiSpeechGrammar.jsonFor(targetProfile))
+            recognizer.setWords(targetProfile != VisionAiDecoderProfile.WAKE)
+            configureEndpointer(recognizer, targetProfile)
+            voskPartialTranscript = ""
+            activeDecoderProfile = targetProfile
+            if (!service.startListening(this)) {
+                throw IllegalStateException("Vosk decoder thread did not restart.")
             }
+            true
+        } catch (error: Exception) {
+            android.util.Log.w(
+                "VisionAudio",
+                "Offline decoder profile switch failed: ${error.javaClass.simpleName}",
+            )
+            destroyActiveSession(cancel = true)
+            false
         }
     }
 
@@ -499,9 +528,7 @@ class OnDeviceSpeechRecognizerHandler(
         if (sessionMode != SessionMode.HANDS_FREE && pendingSessionMode != SessionMode.HANDS_FREE) {
             return
         }
-        cancelPauseWatchdog()
         cancelHandsFreeWakeTimeout()
-        cancelPartialWakeTimeout()
         awaitingHandsFreeCommand = false
         try {
             if (wakeLock?.isHeld == true) {
@@ -677,9 +704,7 @@ class OnDeviceSpeechRecognizerHandler(
         )
         pendingStartResult = null
         pendingSessionMode = null
-        cancelPauseWatchdog()
         cancelHandsFreeWakeTimeout()
-        cancelPartialWakeTimeout()
         awaitingHandsFreeCommand = false
         cancelStopTimeout()
         destroyActiveSession(cancel = true)
@@ -709,6 +734,7 @@ class OnDeviceSpeechRecognizerHandler(
         }
         activeProvider = null
         sessionMode = null
+        activeDecoderProfile = null
     }
 
     private fun destroyAndroidRecognizer() {
@@ -721,31 +747,44 @@ class OnDeviceSpeechRecognizerHandler(
     }
 
     private fun destroyVoskSession(cancel: Boolean) {
-        // Ensure the audio thread is not concurrently mutating the recognizer
-        voskLock.withLock {
-            val service = voskSpeechService
-            if (service != null) {
-                if (cancel) {
-                    try {
-                        service.cancel()
-                    } catch (_: Exception) {
-                        // Shutdown still runs.
-                    }
-                }
+        val service = voskSpeechService
+        if (service != null) {
+            if (cancel) {
                 try {
-                    service.shutdown()
+                    service.cancel()
                 } catch (_: Exception) {
-                    // AudioRecord is already released.
+                    // Shutdown still runs.
                 }
             }
-            voskSpeechService = null
             try {
-                voskRecognizer?.close()
+                service.shutdown()
             } catch (_: Exception) {
-                // Recognizer is already being released.
+                // AudioRecord is already released.
             }
-            voskRecognizer = null
         }
+        voskSpeechService = null
+        releaseAudioEffects()
+        try {
+            voskRecognizer?.close()
+        } catch (_: Exception) {
+            // Recognizer is already being released.
+        }
+        voskRecognizer = null
+    }
+
+    private fun releaseAudioEffects() {
+        try {
+            acousticEchoCanceler?.release()
+        } catch (_: Exception) {}
+        try {
+            noiseSuppressor?.release()
+        } catch (_: Exception) {}
+        try {
+            automaticGainControl?.release()
+        } catch (_: Exception) {}
+        acousticEchoCanceler = null
+        noiseSuppressor = null
+        automaticGainControl = null
     }
 
     private fun cancelStopTimeout() {
@@ -815,18 +854,12 @@ class OnDeviceSpeechRecognizerHandler(
     override fun onPartialResult(hypothesis: String) {
         if (activeProvider != RecognitionProvider.VOSK) return
         voskPartialTranscript = transcriptFromJson(hypothesis, "partial")
-        if (sessionMode == SessionMode.HANDS_FREE) {
-            if (!awaitingHandsFreeCommand) {
-                handlePartialHandsFreeTranscript(voskPartialTranscript)
-            }
-        }
     }
 
     override fun onResult(hypothesis: String) {
         if (activeProvider != RecognitionProvider.VOSK) return
         val transcript = transcriptFromJson(hypothesis, "text")
         if (sessionMode == SessionMode.HANDS_FREE) {
-            cancelPartialWakeTimeout()
             handleHandsFreeTranscript(transcript)
         } else {
             transcript.takeIf { it.isNotBlank() }?.let(::addVoskSegment)
@@ -837,7 +870,6 @@ class OnDeviceSpeechRecognizerHandler(
     override fun onFinalResult(hypothesis: String) {
         if (activeProvider == RecognitionProvider.VOSK) {
             if (sessionMode == SessionMode.HANDS_FREE) {
-                cancelPartialWakeTimeout()
                 handleHandsFreeTranscript(transcriptFromJson(hypothesis, "text"))
             } else {
                 finishVoskTranscript(hypothesis)
@@ -873,30 +905,12 @@ class OnDeviceSpeechRecognizerHandler(
     }
 
 
-    private fun isDirectInterruption(normalized: String): Boolean {
-        val directSet = setOf("stop", "cancel", "pause", "resume", "go back", "back", "no", "quit")
-        return directSet.any { normalized.contains(it) }
-    }
-
     private fun handleHandsFreeTranscript(rawTranscript: String) {
         val transcript = rawTranscript.trim()
         if (transcript.isEmpty() || sessionMode != SessionMode.HANDS_FREE) return
         val normalized = transcript.lowercase(Locale.US).replace(WHITESPACE_REGEX, " ")
         if (normalized.isEmpty() || normalized == "[unk]" || normalized == "unk") return
         if (normalized == lastHandledHandsFreeTranscript) return
-
-        if (isDirectInterruption(normalized)) {
-            cancelHandsFreeWakeTimeout()
-            cancelPartialWakeTimeout()
-            awaitingHandsFreeCommand = false
-            voskRecognizer?.reset()
-            lastHandledHandsFreeTranscript = normalized
-            channel.invokeMethod(
-                "onHandsFreeCommand",
-                mapOf("transcript" to normalized),
-            )
-            return
-        }
 
         if (awaitingHandsFreeCommand) {
             // Vosk can deliver the same utterance in both onResult and
@@ -929,62 +943,24 @@ class OnDeviceSpeechRecognizerHandler(
             val command = wakeMatch.command
             pauseHandsFree()
             lastHandledHandsFreeTranscript = normalized
+            // The idle decoder contains wake phrases only, so a command is
+            // normally empty here. Keep bounded combined-phrase support for
+            // defensive compatibility with a future decoder profile.
             if (command.isNotEmpty()) {
+                awaitingHandsFreeCommand = false
                 channel.invokeMethod(
                     "onHandsFreeCommand",
                     mapOf("transcript" to command),
                 )
                 return
             }
-
             awaitingHandsFreeCommand = true
             scheduleHandsFreeWakeTimeout()
             channel.invokeMethod("onHandsFreeWake", null)
             return
         }
-
-
-
-        // Ambient noise / [unk] - keep hands-free active and listening
-    }
-
-    /**
-     * Wake immediately when the offline decoder has already produced the
-     * complete standalone wake phrase as a partial hypothesis. This avoids
-     * waiting forever on devices that do not emit a timely final result.
-     * Combined "Hey Vision AI, do ..." requests still wait for the final
-     * hypothesis so their full command is not cut off.
-     */
-    private fun handlePartialHandsFreeTranscript(rawTranscript: String) {
-        val transcript = rawTranscript.trim()
-        if (transcript.isEmpty() || sessionMode != SessionMode.HANDS_FREE) return
-        val normalized = transcript.lowercase(Locale.US).replace(WHITESPACE_REGEX, " ")
-        if (normalized == lastHandledHandsFreeTranscript) return
-
-        // Wake immediately when the offline decoder has already produced the
-        // complete standalone wake phrase as a partial hypothesis.
-        val wakeMatch = VisionAiWakePhrase.match(normalized)
-        if (wakeMatch != null && wakeMatch.command.isEmpty()) {
-            cancelPartialWakeTimeout()
-            cancelHandsFreeWakeTimeout()
-            awaitingHandsFreeCommand = true
-            lastHandledHandsFreeTranscript = normalized
-            scheduleHandsFreeWakeTimeout()
-            channel.invokeMethod("onHandsFreeWake", null)
-            return
-        }
-
-        val timeout = Runnable {
-            if (sessionMode == SessionMode.HANDS_FREE && !awaitingHandsFreeCommand) {
-                lastHandledHandsFreeTranscript = normalized
-                pauseHandsFree()
-                awaitingHandsFreeCommand = true
-                scheduleHandsFreeWakeTimeout()
-                channel.invokeMethod("onHandsFreeWake", null)
-            }
-        }
-        partialWakeTimeout = timeout
-        mainHandler.postDelayed(timeout, PARTIAL_WAKE_SETTLE_MS)
+        // Ambient noise, generic speech, and [unk] are ignored until the
+        // complete branded wake phrase is recognized.
     }
 
     private fun scheduleHandsFreeWakeTimeout() {
@@ -998,11 +974,6 @@ class OnDeviceSpeechRecognizerHandler(
         }
         handsFreeWakeTimeout = timeout
         mainHandler.postDelayed(timeout, HANDS_FREE_COMMAND_TIMEOUT_MS)
-    }
-
-    private fun cancelPartialWakeTimeout() {
-        partialWakeTimeout?.let(mainHandler::removeCallbacks)
-        partialWakeTimeout = null
     }
 
     private fun addVoskSegment(segment: String) {
@@ -1080,8 +1051,7 @@ class OnDeviceSpeechRecognizerHandler(
 
     private companion object {
         const val STOP_TIMEOUT_MS = 8_000L
-        const val PARTIAL_WAKE_SETTLE_MS = 650L
-        const val HANDS_FREE_COMMAND_TIMEOUT_MS = 60_000L
+        const val HANDS_FREE_COMMAND_TIMEOUT_MS = 12_000L
         const val MAX_SESSION_MS = 30_000
         const val VOSK_SAMPLE_RATE = 16_000f
         const val VOSK_ASSET_PATH = "model-en-us"

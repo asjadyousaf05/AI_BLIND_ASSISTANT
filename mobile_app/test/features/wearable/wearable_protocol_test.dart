@@ -2,9 +2,12 @@ import 'dart:math';
 
 import 'package:ai_blind_assistant/app/wearable_controller.dart';
 import 'package:ai_blind_assistant/domain/entities/protocol_envelope.dart';
+import 'package:ai_blind_assistant/domain/entities/bounding_box.dart';
 import 'package:ai_blind_assistant/domain/entities/wearable_credential.dart';
 import 'package:ai_blind_assistant/domain/entities/wearable_settings_snapshot.dart';
+import 'package:ai_blind_assistant/domain/entities/wearable_telemetry.dart';
 import 'package:ai_blind_assistant/domain/enums/protocol_message_type.dart';
+import 'package:ai_blind_assistant/domain/enums/wearable_direction.dart';
 import 'package:ai_blind_assistant/infrastructure/networking/bounded_retry_policy.dart';
 import 'package:ai_blind_assistant/infrastructure/networking/protocol_codec.dart';
 import 'package:ai_blind_assistant/infrastructure/networking/sequence_deduplicator.dart';
@@ -184,7 +187,60 @@ void main() {
     expect(WearableController.validateHost('rpi3-ml'), isNull);
     expect(WearableController.validateHost('8.8.8.8'), isNotNull);
     expect(WearableController.validateHost('example.com'), isNotNull);
-    expect(WearableController.validatePairingCode('23ABCDYZ'), isNull);
-    expect(WearableController.validatePairingCode('123456'), isNotNull);
+  });
+
+  test('code-free enrollment messages validate strictly', () {
+    const codec = ProtocolCodec();
+    final request = ProtocolEnvelope(
+      protocolVersion: 1,
+      type: ProtocolMessageType.enrollmentRequest,
+      messageId: 'enrollment-request-0001',
+      timestamp: timestamp,
+      sequence: 0,
+      payload: const {'clientId': 'phone-1', 'clientName': 'Vision phone'},
+    );
+    final decodedRequest = codec.decode(codec.encode(request));
+    expect(decodedRequest.type, ProtocolMessageType.enrollmentRequest);
+    expect(decodedRequest.payload, request.payload);
+
+    final result = ProtocolEnvelope(
+      protocolVersion: 1,
+      type: ProtocolMessageType.enrollmentResult,
+      messageId: 'enrollment-result-0001',
+      timestamp: timestamp,
+      sequence: 0,
+      payload: const {
+        'requestMessageId': 'enrollment-request-0001',
+        'enrolled': false,
+        'errorCode': 'enrollment_closed',
+      },
+    );
+    final decodedResult = codec.decode(codec.encode(result));
+    expect(decodedResult.type, ProtocolMessageType.enrollmentResult);
+    expect(decodedResult.payload, result.payload);
+  });
+
+  test('wearable phone announcement uses relative position, not distance', () {
+    final detection = WearableDetectionEvent(
+      sourceDeviceId: 'pi-test',
+      frameSequence: 1,
+      classId: 104,
+      className: 'chair',
+      confidence: 0.8,
+      boundingBox: const BoundingBox(
+        left: 0.2,
+        top: 0.1,
+        right: 0.8,
+        bottom: 0.9,
+      ),
+      direction: WearableDirection.right,
+      capturedAt: timestamp,
+      priority: 80,
+      relativeProximity: 'very_close',
+      feedbackTarget: WearableFeedbackTarget.phone,
+    );
+
+    expect(detection.spokenDescription, 'Chair very close on the right');
+    expect(detection.spokenDescription, isNot(contains('meter')));
   });
 }

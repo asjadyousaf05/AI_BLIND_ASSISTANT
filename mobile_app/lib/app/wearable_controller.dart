@@ -6,12 +6,14 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/lifecycle/app_lifecycle_observer.dart';
+import '../core/constants/wearable_defaults.dart';
 import '../domain/entities/app_settings.dart';
 import '../domain/entities/wearable_device.dart';
 import '../domain/entities/wearable_failure.dart';
 import '../domain/entities/wearable_repository_event.dart';
 import '../domain/entities/wearable_session_state.dart';
 import '../domain/entities/wearable_settings_snapshot.dart';
+import '../domain/entities/wearable_telemetry.dart';
 import '../domain/enums/wearable_connection_phase.dart';
 import '../domain/enums/wearable_failure_kind.dart';
 import '../domain/repositories/wearable_repository.dart';
@@ -33,6 +35,7 @@ class WearableControllerState {
     this.actionInProgress = false,
     this.lifecycleSuspended = false,
     this.localFailure,
+    this.phoneFeedbackWarning,
   });
 
   final WearableSessionState session;
@@ -41,6 +44,7 @@ class WearableControllerState {
   final bool actionInProgress;
   final bool lifecycleSuspended;
   final WearableFailure? localFailure;
+  final String? phoneFeedbackWarning;
 
   WearableFailure? get failure => localFailure ?? session.failure;
   bool get canRunAction => !actionInProgress && !session.phase.isBusy;
@@ -52,7 +56,9 @@ class WearableControllerState {
     bool? actionInProgress,
     bool? lifecycleSuspended,
     WearableFailure? localFailure,
+    String? phoneFeedbackWarning,
     bool clearLocalFailure = false,
+    bool clearPhoneFeedbackWarning = false,
   }) {
     return WearableControllerState(
       session: session ?? this.session,
@@ -63,6 +69,9 @@ class WearableControllerState {
       localFailure: clearLocalFailure
           ? null
           : (localFailure ?? this.localFailure),
+      phoneFeedbackWarning: clearPhoneFeedbackWarning
+          ? null
+          : (phoneFeedbackWarning ?? this.phoneFeedbackWarning),
     );
   }
 }
@@ -80,6 +89,7 @@ class WearableController extends Notifier<WearableControllerState> {
   bool _connectionDesired = false;
   bool _foreground = true;
   bool _settingsSyncInProgress = false;
+  bool _phoneAnnouncementInProgress = false;
   int _settingsRevision = 0;
   DateTime _settingsUpdatedAt = DateTime.now().toUtc();
 
@@ -149,7 +159,8 @@ class WearableController extends Notifier<WearableControllerState> {
     _repository.selectDevice(device);
     _refreshFromRepository();
     state = state.copyWith(
-      liveMessage: '${device.name} selected. Pair it to continue.',
+      liveMessage:
+          '${device.name} selected. Connect to enroll this phone and start detection.',
       clearLocalFailure: true,
     );
   }
@@ -176,22 +187,24 @@ class WearableController extends Notifier<WearableControllerState> {
     return null;
   }
 
-  Future<void> pair(String pairingCode) async {
-    final codeError = validatePairingCode(pairingCode);
-    if (codeError != null) {
-      _recordValidationFailure(codeError);
+  Future<void> enroll() async {
+    if (!_beginAction('Enrolling this phone securely with the wearable')) {
       return;
     }
-    if (!_beginAction('Pairing with the selected wearable')) return;
     try {
-      await _repository.pair(pairingCode.trim().toUpperCase());
+      await _repository.enroll();
       _refreshFromRepository();
-      _setLiveMessage('Pairing succeeded. The wearable is ready to connect.');
+      _setLiveMessage(
+        'This phone is now trusted. Its credential is protected by Android Keystore.',
+      );
     } on Object catch (error) {
+      _refreshFromRepository();
+      final failure = state.session.failure;
       _recordActionFailure(
-        WearableFailureKind.authentication,
-        'pairing_failed',
-        'Pairing failed. Check the code and request a fresh code if it expired.',
+        failure?.kind ?? WearableFailureKind.authentication,
+        failure?.code ?? 'enrollment_failed',
+        failure?.userMessage ??
+            'This phone could not be enrolled. Check the trusted-LAN connection.',
         error,
       );
     } finally {
@@ -225,6 +238,35 @@ class WearableController extends Notifier<WearableControllerState> {
     } finally {
       _endAction();
     }
+  }
+
+  /// Enrolls the first phone when needed, authenticates, and starts detection.
+  ///
+  /// Enrollment is code-free and exclusive to an unclaimed Pi on a trusted
+  /// private LAN. Later sessions reuse the Android Keystore credential.
+  Future<void> connectAndStartAssistance() async {
+    if (state.session.phase == WearableConnectionPhase.deviceFound) {
+      await enroll();
+      if (state.session.phase != WearableConnectionPhase.paired) return;
+    }
+    await connect();
+    if (!state.session.phase.isConnected || !state.session.canStart) return;
+    await startAssistance();
+  }
+
+  /// Uses the owner-configured default endpoint when no device is selected.
+  Future<void> connectDefaultAndStartAssistance() async {
+    if (state.session.selectedDevice == null) {
+      final error = selectManualDevice(
+        host: WearableDefaults.host,
+        port: WearableDefaults.port.toString(),
+      );
+      if (error != null) {
+        _recordValidationFailure(error);
+        return;
+      }
+    }
+    await connectAndStartAssistance();
   }
 
   Future<void> disconnect() async {
@@ -344,7 +386,7 @@ class WearableController extends Notifier<WearableControllerState> {
     if (failureKind == WearableFailureKind.pairingExpired ||
         failureKind == WearableFailureKind.authentication) {
       _setLiveMessage(
-        'Enter a fresh pairing code, or forget the revoked credential and pair again.',
+        'Forget the rejected phone credential. If the Pi still trusts an old phone, reset trusted phones locally on the Pi, then connect again.',
       );
       return;
     }
@@ -356,7 +398,7 @@ class WearableController extends Notifier<WearableControllerState> {
   }
 
   Future<void> forgetDevice() async {
-    if (!_beginAction('Forgetting the paired wearable')) return;
+    if (!_beginAction('Forgetting the trusted wearable credential')) return;
     _connectionDesired = false;
     try {
       await _repository.forgetDevice();
@@ -483,22 +525,15 @@ class WearableController extends Notifier<WearableControllerState> {
     return null;
   }
 
-  static String? validatePairingCode(String? rawValue) {
-    final value = rawValue?.trim().toUpperCase() ?? '';
-    if (!RegExp(r'^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$').hasMatch(value)) {
-      return 'Enter the current eight-character pairing code shown by the Pi.';
-    }
-    return null;
-  }
-
   static String statusLabelFor(WearableConnectionPhase phase) {
     return switch (phase) {
       WearableConnectionPhase.notConfigured => 'No wearable configured',
       WearableConnectionPhase.disconnected => 'Wearable disconnected',
       WearableConnectionPhase.discovering => 'Searching for wearable',
       WearableConnectionPhase.deviceFound => 'Wearable found',
+      WearableConnectionPhase.enrolling => 'Securing trusted phone enrollment',
       WearableConnectionPhase.pairing => 'Pairing in progress',
-      WearableConnectionPhase.paired => 'Wearable paired',
+      WearableConnectionPhase.paired => 'Phone trusted by wearable',
       WearableConnectionPhase.connecting => 'Connecting to wearable',
       WearableConnectionPhase.authenticating =>
         'Authenticating local connection',
@@ -527,9 +562,9 @@ class WearableController extends Notifier<WearableControllerState> {
       WearableFailureKind.network || WearableFailureKind.timeout =>
         'Check Pi power, local Wi-Fi, and the wearable service. Then retry; internet access is not required.',
       WearableFailureKind.authentication =>
-        'The saved credential was rejected or revoked. Forget this device, generate a new Pi pairing code, and pair again.',
+        'The saved credential was rejected or revoked. Forget this device. If needed, reset trusted phones locally on the Pi and connect again.',
       WearableFailureKind.pairingExpired =>
-        'Generate a fresh short-lived code on the Pi and enter it before it expires.',
+        'This legacy pairing request expired. Use the code-free Connect & Start flow with the matching Pi service.',
       WearableFailureKind.incompatibleProtocol =>
         'Install compatible app and Pi service versions. Connections are blocked until their protocol versions match.',
       WearableFailureKind.malformedMessage =>
@@ -645,14 +680,42 @@ class WearableController extends Notifier<WearableControllerState> {
         state = state.copyWith(
           settingsSyncState: WearableSettingsSyncState.synchronized,
         );
-      case WearableDetectionReceived():
-        // The Pi owns default speech/haptics. Detection events remain visible
-        // in the UI, but are intentionally not announced by the phone because
-        // protocol v1 has no explicit phone-feedback permission flag.
-        break;
+      case WearableDetectionReceived(:final detection, :final isHazard):
+        if (isHazard &&
+            detection.feedbackTarget == WearableFeedbackTarget.phone &&
+            !detection.piAnnounced) {
+          unawaited(_announceDetectionOnPhone(detection));
+        }
       case WearableStatusReceived():
       case WearableHealthReceived():
         break;
+    }
+  }
+
+  Future<void> _announceDetectionOnPhone(
+    WearableDetectionEvent detection,
+  ) async {
+    if (_disposed || _phoneAnnouncementInProgress) return;
+    final settings = ref.read(appSettingsControllerProvider);
+    if (!settings.feedbackSettings.audioEnabled) return;
+
+    _phoneAnnouncementInProgress = true;
+    try {
+      await ref.read(wearablePhoneFeedbackServiceProvider).announce(detection);
+      if (!_disposed) {
+        state = state.copyWith(clearPhoneFeedbackWarning: true);
+      }
+    } on Object catch (error) {
+      debugPrint('Wearable phone feedback failed: ${error.runtimeType}');
+      if (!_disposed) {
+        state = state.copyWith(
+          phoneFeedbackWarning:
+              'A detection arrived, but the phone could not announce it. '
+              'Check phone media volume and text-to-speech settings.',
+        );
+      }
+    } finally {
+      _phoneAnnouncementInProgress = false;
     }
   }
 

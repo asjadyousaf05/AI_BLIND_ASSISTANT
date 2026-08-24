@@ -175,6 +175,19 @@ class WebSocketWearableRepository implements WearableRepository {
   }
 
   @override
+  Future<void> enroll() => _issueCredential(
+    phase: WearableConnectionPhase.enrolling,
+    requestType: ProtocolMessageType.enrollmentRequest,
+    resultType: ProtocolMessageType.enrollmentResult,
+    successField: 'enrolled',
+    disconnectReason: 'trusted_enrollment',
+    payloadForClient: (clientId) => {
+      'clientId': clientId,
+      'clientName': clientName,
+    },
+  );
+
+  @override
   Future<void> pair(String pairingCode) async {
     _ensureUsable();
     if (!RegExp(
@@ -186,49 +199,85 @@ class WebSocketWearableRepository implements WearableRepository {
         'Pairing code must contain eight valid characters',
       );
     }
+    await _issueCredential(
+      phase: WearableConnectionPhase.pairing,
+      requestType: ProtocolMessageType.pairRequest,
+      resultType: ProtocolMessageType.pairResult,
+      successField: 'paired',
+      disconnectReason: 'pairing',
+      payloadForClient: (clientId) => {
+        'clientId': clientId,
+        'clientName': clientName,
+        'pairingCode': pairingCode,
+      },
+    );
+  }
+
+  Future<void> _issueCredential({
+    required WearableConnectionPhase phase,
+    required ProtocolMessageType requestType,
+    required ProtocolMessageType resultType,
+    required String successField,
+    required String disconnectReason,
+    required Map<String, Object?> Function(String clientId) payloadForClient,
+  }) async {
+    _ensureUsable();
     var selected = _state.selectedDevice;
     if (selected == null) {
-      throw StateError('Select a wearable device before pairing');
+      throw StateError('Select a wearable device before enrollment');
     }
     _beginConnectionOperation();
     _intentionalDisconnect = true;
     _authenticationRejected = false;
-    _emit(
-      _state.copyWith(
-        phase: WearableConnectionPhase.pairing,
-        clearFailure: true,
-      ),
-    );
+    _emit(_state.copyWith(phase: phase, clearFailure: true));
     try {
       selected = await _resolveLocalEndpoint(selected);
       _emit(_state.copyWith(selectedDevice: selected));
-      await _transport.disconnect(reason: 'begin_pairing');
+      await _transport.disconnect(reason: 'begin_$disconnectReason');
       _transport.clearAuthentication();
       final helloFuture = _nextMessage(ProtocolMessageType.hello);
       await _transport.connect(selected.webSocketUri);
       final hello = await helloFuture;
       final actualDevice = _deviceFromHello(selected, hello);
+      if (requestType == ProtocolMessageType.enrollmentRequest) {
+        final capabilities = hello.payload['capabilities'];
+        final supportsEnrollment =
+            capabilities is List &&
+            capabilities.contains('exclusive_first_client_enrollment');
+        if (!supportsEnrollment) {
+          throw WearableRemoteException(
+            code: hello.payload['paired'] == true
+                ? 'enrollment_closed'
+                : 'enrollment_disabled',
+            message: hello.payload['paired'] == true
+                ? 'Another phone is already enrolled. Reset trusted phones on the Pi before enrolling this phone.'
+                : 'Code-free enrollment is disabled on this Pi service.',
+            retryable: false,
+          );
+        }
+      }
       final clientId = await _credentialRepository.getOrCreateClientId();
       final request = _messageFactory.create(
-        ProtocolMessageType.pairRequest,
-        payload: {
-          'clientId': clientId,
-          'clientName': clientName,
-          'pairingCode': pairingCode,
-        },
+        requestType,
+        payload: payloadForClient(clientId),
       );
       final resultFuture = _nextMessage(
-        ProtocolMessageType.pairResult,
+        resultType,
         predicate: (message) =>
             message.payload['requestMessageId'] == request.messageId,
       );
       await _transport.send(request, requireAcknowledgement: false);
       final result = await resultFuture;
-      if (result.payload['paired'] != true) {
+      if (result.payload[successField] != true) {
+        final code =
+            (result.payload['errorCode'] as String?) ??
+            '${disconnectReason}_failed';
         throw WearableRemoteException(
-          code: (result.payload['errorCode'] as String?) ?? 'pairing_failed',
-          message: 'The pairing code was rejected or expired',
-          retryable: true,
+          code: code,
+          message: code == 'enrollment_closed'
+              ? 'Another phone is already enrolled. Reset trusted phones on the Pi before enrolling this phone.'
+              : 'The wearable did not issue a trusted phone credential.',
+          retryable: code != 'enrollment_closed',
           requestMessageId: request.messageId,
         );
       }
@@ -250,7 +299,7 @@ class WebSocketWearableRepository implements WearableRepository {
       );
       await _credentialRepository.write(credential);
       _activeCredential = credential;
-      await _transport.disconnect(reason: 'pairing_complete');
+      await _transport.disconnect(reason: '${disconnectReason}_complete');
       _emit(
         _state.copyWith(
           phase: WearableConnectionPhase.paired,
@@ -259,14 +308,16 @@ class WebSocketWearableRepository implements WearableRepository {
         ),
       );
     } on Object catch (error) {
-      await _transport.disconnect(reason: 'pairing_failed');
+      await _transport.disconnect(reason: '${disconnectReason}_failed');
       final failure = _classify(
         error,
         fallbackKind: WearableFailureKind.authentication,
       );
       _reportFailure(
         failure,
-        phase: failure.kind == WearableFailureKind.pairingExpired
+        phase: requestType == ProtocolMessageType.enrollmentRequest
+            ? WearableConnectionPhase.deviceFound
+            : failure.kind == WearableFailureKind.pairingExpired
             ? WearableConnectionPhase.authenticationFailed
             : WearableConnectionPhase.error,
       );
@@ -656,6 +707,8 @@ class WebSocketWearableRepository implements WearableRepository {
       case ProtocolMessageType.hello:
       case ProtocolMessageType.authentication:
       case ProtocolMessageType.heartbeat:
+      case ProtocolMessageType.enrollmentRequest:
+      case ProtocolMessageType.enrollmentResult:
       case ProtocolMessageType.pairRequest:
       case ProtocolMessageType.pairResult:
       case ProtocolMessageType.startAssistance:

@@ -27,10 +27,11 @@ async def receive_type(socket, kind: str, *, key=None, nonce=None) -> Envelope:
 
 
 @pytest.mark.asyncio
-async def test_pair_control_disconnect_and_reconnect(tmp_path, monkeypatch) -> None:
+async def test_enroll_control_disconnect_and_reconnect(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AIBA_BIND_HOST", "127.0.0.1")
     monkeypatch.setenv("AIBA_PORT", "0")
     monkeypatch.setenv("AIBA_ENABLE_MDNS", "false")
+    monkeypatch.setenv("AIBA_ALLOW_FIRST_CLIENT_ENROLLMENT", "true")
     monkeypatch.setenv("AIBA_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("AIBA_LOG_DIR", str(tmp_path / "logs"))
     config = replace(
@@ -53,26 +54,41 @@ async def test_pair_control_disconnect_and_reconnect(tmp_path, monkeypatch) -> N
     await engine.initialize()
     await server.start()
     endpoint = f"ws://127.0.0.1:{server.bound_port}/wearable/v1"
-    code, _ = pairing.create_code(60)
-
     try:
         async with connect(endpoint, ping_interval=None) as socket:
             hello = await receive_type(socket, "hello")
             assert hello.payload["deviceId"] == config.device_id
-            pair_request = Envelope.create(
-                "pair_request",
+            assert "exclusive_first_client_enrollment" in hello.payload["capabilities"]
+            enrollment_request = Envelope.create(
+                "enrollment_request",
                 {
                     "clientId": "phone-e2e",
                     "clientName": "Flutter test",
-                    "pairingCode": code,
                 },
                 sequence=0,
             )
-            await socket.send(pair_request.encode())
-            pair_result = await receive_type(socket, "pair_result")
-            assert pair_result.payload["paired"] is True
-            credential_id = pair_result.payload["credentialId"]
-            secret = pair_result.payload["credentialSecret"]
+            await socket.send(enrollment_request.encode())
+            enrollment_result = await receive_type(socket, "enrollment_result")
+            assert enrollment_result.payload["enrolled"] is True
+            credential_id = enrollment_result.payload["credentialId"]
+            secret = enrollment_result.payload["credentialSecret"]
+
+        async with connect(endpoint, ping_interval=None) as socket:
+            hello = await receive_type(socket, "hello")
+            assert hello.payload["paired"] is True
+            assert "exclusive_first_client_enrollment" not in hello.payload["capabilities"]
+            second_enrollment = Envelope.create(
+                "enrollment_request",
+                {"clientId": "phone-other", "clientName": "Other phone"},
+                sequence=0,
+            )
+            await socket.send(second_enrollment.encode())
+            result = await receive_type(socket, "enrollment_result")
+            assert result.payload == {
+                "requestMessageId": second_enrollment.message_id,
+                "enrolled": False,
+                "errorCode": "enrollment_closed",
+            }
 
         key = derive_auth_key(secret)
         sequence = 1

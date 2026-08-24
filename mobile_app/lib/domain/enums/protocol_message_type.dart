@@ -4,6 +4,8 @@ enum ProtocolMessageType {
   authentication('authentication'),
   heartbeat('heartbeat'),
   deviceStatus('device_status'),
+  enrollmentRequest('enrollment_request'),
+  enrollmentResult('enrollment_result'),
   pairRequest('pair_request'),
   pairResult('pair_result'),
   startAssistance('start_assistance'),

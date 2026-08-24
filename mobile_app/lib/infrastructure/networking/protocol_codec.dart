@@ -270,6 +270,12 @@ class ProtocolCodec {
           },
         );
         WearableDeviceStatus.fromPayload(payload);
+      case ProtocolMessageType.enrollmentRequest:
+        _expectKeys(payload, required: {'clientId', 'clientName'});
+        _expectNonEmptyString(payload, 'clientId');
+        _expectNonEmptyString(payload, 'clientName');
+      case ProtocolMessageType.enrollmentResult:
+        _validateCredentialResult(payload, successField: 'enrolled');
       case ProtocolMessageType.pairRequest:
         _expectKeys(
           payload,
@@ -279,7 +285,7 @@ class ProtocolCodec {
         _expectNonEmptyString(payload, 'clientName');
         _expectNonEmptyString(payload, 'pairingCode');
       case ProtocolMessageType.pairResult:
-        _validatePairResult(payload);
+        _validateCredentialResult(payload, successField: 'paired');
       case ProtocolMessageType.startAssistance:
       case ProtocolMessageType.pauseAssistance:
       case ProtocolMessageType.resumeAssistance:
@@ -380,28 +386,35 @@ class ProtocolCodec {
     }
   }
 
-  void _validatePairResult(Map<String, Object?> payload) {
+  void _validateCredentialResult(
+    Map<String, Object?> payload, {
+    required String successField,
+  }) {
     _expectKeys(
       payload,
-      required: {'requestMessageId', 'paired'},
+      required: {'requestMessageId', successField},
       optional: {'deviceId', 'credentialId', 'credentialSecret', 'errorCode'},
     );
     _expectNonEmptyString(payload, 'requestMessageId');
-    final paired = payload['paired'];
-    if (paired is! bool) {
-      throw const FormatException('Invalid pair result');
+    final succeeded = payload[successField];
+    if (succeeded is! bool) {
+      throw const FormatException('Invalid credential result');
     }
-    if (paired) {
+    if (succeeded) {
       _expectNonEmptyString(payload, 'deviceId');
       _expectNonEmptyString(payload, 'credentialId');
       _expectNonEmptyString(payload, 'credentialSecret');
       if (payload.containsKey('errorCode')) {
-        throw const FormatException('Successful pairing cannot have an error');
+        throw const FormatException(
+          'Successful credential issue cannot have an error',
+        );
       }
     } else {
       _expectNonEmptyString(payload, 'errorCode');
       if (payload.containsKey('credentialSecret')) {
-        throw const FormatException('Failed pairing cannot include a secret');
+        throw const FormatException(
+          'Failed credential issue cannot include a secret',
+        );
       }
     }
   }

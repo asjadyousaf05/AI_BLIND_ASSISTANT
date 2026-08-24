@@ -20,12 +20,9 @@ python3 -m venv .venv
 AIBA_BIND_HOST=127.0.0.1 AIBA_PORT=8765 \
   AIBA_STATE_DIR="$PWD/var/state" AIBA_LOG_DIR="$PWD/var/logs" \
   AIBA_ENABLE_MDNS=false AIBA_ENABLE_LOCAL_SPEECH=false \
-  .venv/bin/ai-blind-pi pairing-code
-AIBA_BIND_HOST=127.0.0.1 AIBA_PORT=8765 \
-  AIBA_STATE_DIR="$PWD/var/state" AIBA_LOG_DIR="$PWD/var/logs" \
-  AIBA_ENABLE_MDNS=false AIBA_ENABLE_LOCAL_SPEECH=false \
+  AIBA_ALLOW_FIRST_CLIENT_ENROLLMENT=true \
   .venv/bin/ai-blind-pi serve --simulate
 ```
 
-Production installation, pairing, service management, security boundaries,
+Production installation, code-free enrollment, service management, security boundaries,
 and camera tests are documented in `../docs/wearable-mode.md`.

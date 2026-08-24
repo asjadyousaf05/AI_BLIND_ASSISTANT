@@ -12,6 +12,7 @@ import '../../../app/theme/app_spacing.dart';
 import '../../../app/wearable_controller.dart';
 import '../../../core/constants/app_keys.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/wearable_defaults.dart';
 import '../../../core/widgets/action_buttons.dart';
 import '../../../core/widgets/app_bottom_navigation.dart';
 import '../../../core/widgets/app_screen_scaffold.dart';
@@ -35,15 +36,15 @@ class RaspberryPiScreen extends ConsumerStatefulWidget {
 
 class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
   final _manualFormKey = GlobalKey<FormState>();
-  final _hostController = TextEditingController();
-  final _portController = TextEditingController(text: '8765');
-  final _pairingCodeController = TextEditingController();
+  final _hostController = TextEditingController(text: WearableDefaults.host);
+  final _portController = TextEditingController(
+    text: WearableDefaults.port.toString(),
+  );
 
   @override
   void dispose() {
     _hostController.dispose();
     _portController.dispose();
-    _pairingCodeController.dispose();
     super.dispose();
   }
 
@@ -56,11 +57,7 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
     final phase = session.phase;
     final connected = phase.isConnected;
     final selectedDevice = session.selectedDevice;
-    final showPairing =
-        selectedDevice != null &&
-        (phase == WearableConnectionPhase.deviceFound ||
-            phase == WearableConnectionPhase.authenticationFailed ||
-            viewState.failure?.kind.name == 'pairingExpired');
+    final connectionTarget = selectedDevice?.name ?? WearableDefaults.host;
 
     return AppScreenScaffold(
       title: AppStrings.raspberryPiTitle,
@@ -136,11 +133,19 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
                 Navigator.of(context).pushNamed(AppRoute.raspberryPiError.path),
           ),
         ],
+        if (viewState.phoneFeedbackWarning case final warning?) ...[
+          const SizedBox(height: AppSpacing.space4),
+          FeatureNoteCard(
+            icon: AppIcons.warning,
+            title: 'Phone audio unavailable',
+            description: warning,
+          ),
+        ],
         const SizedBox(height: AppSpacing.space6),
         _SectionHeading(
           title: 'Find your wearable',
           description:
-              'Search with local discovery or enter a current hostname or IP address.',
+              'The configured Pi address is ${WearableDefaults.host}. Search local discovery or use the address below.',
         ),
         const SizedBox(height: AppSpacing.space3),
         PrimaryActionButton(
@@ -177,70 +182,34 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
           const SizedBox(height: AppSpacing.space5),
           _SelectedDeviceCard(device: selectedDevice),
         ],
-        if (showPairing) ...[
-          const SizedBox(height: AppSpacing.space6),
-          _SectionHeading(
-            title: 'Pair securely',
-            description:
-                'Generate a short-lived code on the Raspberry Pi and enter it here. The code is never saved.',
-          ),
-          const SizedBox(height: AppSpacing.space3),
-          TextFormField(
-            key: AppKeys.raspberryPiPairingCodeField,
-            controller: _pairingCodeController,
-            enabled: viewState.canRunAction,
-            textCapitalization: TextCapitalization.characters,
-            autocorrect: false,
-            enableSuggestions: false,
-            obscureText: true,
-            obscuringCharacter: '•',
-            keyboardType: TextInputType.visiblePassword,
-            maxLength: 8,
-            inputFormatters: [
-              LengthLimitingTextInputFormatter(8),
-              FilteringTextInputFormatter.allow(RegExp(r'[23456789A-HJ-NP-Z]')),
-              _UpperCaseTextFormatter(),
-            ],
-            decoration: const InputDecoration(
-              labelText: 'Pairing code',
-              helperText: 'Eight characters; expires after a short time',
-              border: OutlineInputBorder(),
-            ),
-            validator: WearableController.validatePairingCode,
-            onFieldSubmitted: viewState.canRunAction
-                ? (_) => _pair(controller)
-                : null,
-          ),
-          const SizedBox(height: AppSpacing.space3),
-          PrimaryActionButton(
-            key: AppKeys.raspberryPiPairButton,
-            label: phase == WearableConnectionPhase.pairing
-                ? 'Pairing…'
-                : 'Pair Device',
-            icon: AppIcons.link,
-            semanticLabel:
-                'Pair the selected Raspberry Pi using the short-lived code',
-            onPressed: viewState.canRunAction ? () => _pair(controller) : null,
-          ),
-        ],
-        if (selectedDevice != null && !showPairing && !connected) ...[
+        if (!connected) ...[
           const SizedBox(height: AppSpacing.space5),
+          const FeatureNoteCard(
+            icon: AppIcons.connection,
+            title: 'One-tap trusted connection',
+            description:
+                'No pairing code or Raspberry Pi password is needed. On first use, an unclaimed Pi trusts this phone and Android Keystore protects its credential. Use only a private network you trust.',
+          ),
+          const SizedBox(height: AppSpacing.space3),
           PrimaryActionButton(
             key: AppKeys.raspberryPiConnectButton,
             label:
-                phase == WearableConnectionPhase.connecting ||
+                phase == WearableConnectionPhase.enrolling ||
+                    phase == WearableConnectionPhase.connecting ||
                     phase == WearableConnectionPhase.authenticating ||
                     phase == WearableConnectionPhase.reconnecting
                 ? 'Connecting…'
-                : 'Connect',
+                : 'Connect & Start Detection',
             icon: AppIcons.link,
             semanticLabel:
-                'Connect securely to ${selectedDevice.name} on the local network',
+                'Connect securely to $connectionTarget and start Raspberry Pi object detection',
             onPressed:
                 viewState.canRunAction &&
                     phase != WearableConnectionPhase.incompatible &&
                     phase != WearableConnectionPhase.authenticationFailed
-                ? controller.connect
+                ? selectedDevice == null
+                      ? controller.connectDefaultAndStartAssistance
+                      : controller.connectAndStartAssistance
                 : null,
           ),
         ],
@@ -269,7 +238,7 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
         const SizedBox(height: AppSpacing.space5),
         const FeatureNoteCard(
           icon: AppIcons.volume,
-          title: 'Feedback stays on the wearable',
+          title: 'Detection audio plays on this phone',
           description: AppStrings.raspberryPiFeedbackOwnership,
         ),
         const SizedBox(height: AppSpacing.space4),
@@ -282,10 +251,10 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
           const SizedBox(height: AppSpacing.space6),
           SecondaryActionButton(
             key: AppKeys.raspberryPiForgetButton,
-            label: 'Forget Paired Device',
+            label: 'Forget Trusted Phone',
             icon: AppIcons.warning,
             semanticLabel:
-                'Forget the paired wearable and remove its phone credential',
+                'Forget this trusted phone and remove its wearable credential',
             onPressed: viewState.canRunAction
                 ? () => _confirmForget(controller, selectedDevice.name)
                 : null,
@@ -317,20 +286,6 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
     }
   }
 
-  Future<void> _pair(WearableController controller) async {
-    final validation = WearableController.validatePairingCode(
-      _pairingCodeController.text,
-    );
-    if (validation != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(validation)));
-      return;
-    }
-    await controller.pair(_pairingCodeController.text);
-    if (mounted) _pairingCodeController.clear();
-  }
-
   Future<void> _confirmForget(
     WearableController controller,
     String deviceName,
@@ -338,10 +293,10 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Forget paired device?'),
+        title: const Text('Forget trusted phone?'),
         content: Text(
           'This removes the saved phone credential for $deviceName. '
-          'You will need a fresh Pi pairing code to reconnect.',
+          'If the Pi cannot be reached to revoke it, reset trusted phones locally on the Pi before enrolling again.',
         ),
         actions: [
           TextButton(
@@ -517,7 +472,7 @@ class _SelectedDeviceCard extends StatelessWidget {
       icon: AppIcons.capStatus,
       title: 'Selected: ${device.name}',
       description:
-          'Local endpoint ${device.host}:${device.port}. Address changes can be rediscovered; no fixed IP is required.',
+          'Local endpoint ${device.host}:${device.port}. The saved Keystore credential is reused after the first connection.',
     );
   }
 }
@@ -651,7 +606,7 @@ class _SettingsPanel extends StatelessWidget {
                   '${settings.feedbackSettings.announcementCooldownSeconds} seconds',
             ),
             _InfoRow(
-              label: 'Speech on Pi',
+              label: 'Detection audio on phone',
               value: settings.feedbackSettings.audioEnabled ? 'On' : 'Off',
             ),
             _InfoRow(
@@ -696,6 +651,11 @@ class _DeviceTelemetryPanel extends StatelessWidget {
     final health = session.deviceHealth;
     final status = session.deviceStatus;
     final detection = session.lastDetection;
+    final feedbackOwner = switch (detection?.feedbackTarget) {
+      WearableFeedbackTarget.phone => 'the phone speaker',
+      WearableFeedbackTarget.pi => 'the Raspberry Pi fallback speaker',
+      WearableFeedbackTarget.none || null => 'no audio output',
+    };
     final lastSeen = _latestTimestamp([
       health?.measuredAt,
       status?.updatedAt,
@@ -759,7 +719,7 @@ class _DeviceTelemetryPanel extends StatelessWidget {
             label:
                 'Latest wearable detection: ${detection.className}, ${detection.direction.name}, '
                 '${(detection.confidence * 100).round()} percent confidence. '
-                'Detection feedback is spoken by the Raspberry Pi, not repeated by the phone.',
+                'Feedback target is $feedbackOwner.',
             child: ExcludeSemantics(
               child: FeatureNoteCard(
                 icon: AppIcons.visibility,
@@ -767,7 +727,7 @@ class _DeviceTelemetryPanel extends StatelessWidget {
                 description:
                     '${detection.className}, ${detection.direction.name}, '
                     '${(detection.confidence * 100).round()}% confidence. '
-                    'Phone speech is intentionally suppressed.',
+                    'Feedback target: $feedbackOwner.',
               ),
             ),
           ),
@@ -864,21 +824,12 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _UpperCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    return newValue.copyWith(text: newValue.text.toUpperCase());
-  }
-}
-
 IconData _phaseIcon(WearableConnectionPhase phase) {
   return switch (phase) {
     WearableConnectionPhase.connected ||
     WearableConnectionPhase.running => AppIcons.success,
     WearableConnectionPhase.discovering ||
+    WearableConnectionPhase.enrolling ||
     WearableConnectionPhase.connecting ||
     WearableConnectionPhase.authenticating ||
     WearableConnectionPhase.reconnecting => AppIcons.refresh,
@@ -902,6 +853,7 @@ Color _phaseColor(WearableConnectionPhase phase) {
     WearableConnectionPhase.paused => AppColors.warning,
     WearableConnectionPhase.discovering ||
     WearableConnectionPhase.deviceFound ||
+    WearableConnectionPhase.enrolling ||
     WearableConnectionPhase.pairing ||
     WearableConnectionPhase.paired ||
     WearableConnectionPhase.connecting ||

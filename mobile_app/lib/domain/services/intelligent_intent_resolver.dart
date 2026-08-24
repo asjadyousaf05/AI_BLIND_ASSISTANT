@@ -20,7 +20,7 @@ class IntelligentIntentResolver {
   static const _nonsenseTokens = {'', '[unk]', 'unk', 'huh', 'ah', 'oh'};
 
   /// Minimum score to accept a match.
-  static const _minAcceptScore = 0.4;
+  static const _minAcceptScore = 0.6;
 
   /// Resolves a raw transcript into a [VoiceCommand].
   ///
@@ -60,30 +60,53 @@ class IntelligentIntentResolver {
     text = AsrCorrectionLexicon.correct(text);
 
     // Stage 4: Filler removal
-    text = text.replaceAll(_fillerPattern, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    text = text
+        .replaceAll(_fillerPattern, ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
 
     // Stage 4b: Polite request prefix stripping
     final strippedText = _stripRequestPrefixes(text);
 
     // Stage 5-6: Try exact alias matching first (highest confidence)
-    final exactMatch = _tryExactMatch(text, context: context) ??
-        (strippedText != text ? _tryExactMatch(strippedText, context: context) : null);
-    if (exactMatch != null) return exactMatch._withTranscripts(rawTranscript, text);
+    final exactMatch =
+        _tryExactMatch(text, context: context) ??
+        (strippedText != text
+            ? _tryExactMatch(strippedText, context: context)
+            : null);
+    if (exactMatch != null) {
+      return exactMatch._withTranscripts(rawTranscript, text);
+    }
 
     // Stage 7-8: Pattern matching for parameterized commands
-    final patternMatch = _tryPatternMatch(text, context: context) ??
-        (strippedText != text ? _tryPatternMatch(strippedText, context: context) : null);
-    if (patternMatch != null) return patternMatch._withTranscripts(rawTranscript, text);
+    final patternMatch =
+        _tryPatternMatch(text, context: context) ??
+        (strippedText != text
+            ? _tryPatternMatch(strippedText, context: context)
+            : null);
+    if (patternMatch != null) {
+      return patternMatch._withTranscripts(rawTranscript, text);
+    }
 
     // Stage 9: Context-aware semantic composition
-    final semanticMatch = _trySemanticComposition(text, context: context) ??
-        (strippedText != text ? _trySemanticComposition(strippedText, context: context) : null);
-    if (semanticMatch != null) return semanticMatch._withTranscripts(rawTranscript, text);
+    final semanticMatch =
+        _trySemanticComposition(text, context: context) ??
+        (strippedText != text
+            ? _trySemanticComposition(strippedText, context: context)
+            : null);
+    if (semanticMatch != null) {
+      return semanticMatch._withTranscripts(rawTranscript, text);
+    }
 
     // Stage 10: Token similarity / fuzzy matching
-    final fuzzyMatch = _tryFuzzyMatch(text, context: context) ??
-        (strippedText != text ? _tryFuzzyMatch(strippedText, context: context) : null);
-    if (fuzzyMatch != null) return fuzzyMatch._withTranscripts(rawTranscript, text);
+    final fuzzyMatch =
+        _tryFuzzyMatch(text, context: context) ??
+        (strippedText != text
+            ? _tryFuzzyMatch(strippedText, context: context)
+            : null);
+    if (fuzzyMatch != null) {
+      return fuzzyMatch._withTranscripts(rawTranscript, text);
+    }
 
     // Stage 11-14: No match found
     return VoiceCommand(
@@ -103,7 +126,9 @@ class IntelligentIntentResolver {
   // ─────────────────── Stage 2: Wake Removal ────────────────────
 
   static final _wakePatterns = [
-    RegExp(r'^(hey|hi|hello|ok|okay|yo)\s+vision\s*(ai|a\s*i|aye|eye)?\s*,?\s*'),
+    RegExp(
+      r'^(hey|hi|hello|ok|okay|yo)\s+vision\s*(ai|a\s*i|aye|eye)?\s*,?\s*',
+    ),
     RegExp(r'^vision\s*(ai|a\s*i|aye|eye)?\s*,?\s*'),
   ];
 
@@ -174,6 +199,18 @@ class IntelligentIntentResolver {
     String text, {
     required VoiceFeatureContext context,
   }) {
+    if (context == VoiceFeatureContext.scannerReading &&
+        (text.contains('line') || text.contains('sentence'))) {
+      final lineNumber = _extractReadingLineNumber(text);
+      if (lineNumber != null) {
+        return VoiceCommand(
+          intent: ReadingGoToLine(lineNumber),
+          matchScore: 0.98,
+          matchType: VoiceMatchType.alias,
+        );
+      }
+    }
+
     // Sensitivity pattern
     for (final entry in _sensitivityPatterns.entries) {
       if (text.contains(entry.key) && _containsSensitivityKeyword(text)) {
@@ -223,8 +260,22 @@ class IntelligentIntentResolver {
       }
     }
 
+    // General assistant speech rate. Reader-specific phrases such as
+    // "speak slower" are resolved by exact contextual aliases first.
+    if (text.contains('speech rate') || text.contains('voice speed')) {
+      final rate = _extractSpeechRate(text);
+      if (rate != null) {
+        return VoiceCommand(
+          intent: SetSpeechRate(rate),
+          matchScore: 0.9,
+          matchType: VoiceMatchType.alias,
+        );
+      }
+    }
+
     // Cooldown pattern
-    if (text.contains('cooldown') || text.contains('announcement interval') ||
+    if (text.contains('cooldown') ||
+        text.contains('announcement interval') ||
         text.contains('alert interval')) {
       final seconds = _extractNumber(text);
       if (seconds != null && seconds >= 1 && seconds <= 30) {
@@ -290,6 +341,10 @@ class IntelligentIntentResolver {
         'HELP' => const NavigateHelp(),
         _ => null,
       };
+    }
+
+    if (entity == 'SMART_AI' && verb == 'ACTIVATE') {
+      return const NavigateSmartAi();
     }
 
     // Mobile Detection compositions
@@ -373,14 +428,19 @@ class IntelligentIntentResolver {
     if (textTokens.isEmpty) return null;
 
     for (final entry in _exactAliases.entries) {
-      final aliasTokens = entry.key.split(' ').where((t) => t.isNotEmpty).toSet();
+      final aliasTokens = entry.key
+          .split(' ')
+          .where((t) => t.isNotEmpty)
+          .toSet();
       if (aliasTokens.isEmpty) continue;
 
       final intersection = textTokens.intersection(aliasTokens);
       final union = textTokens.union(aliasTokens);
       final jaccard = intersection.length / union.length;
 
-      if (jaccard > bestScore && jaccard >= _minAcceptScore) {
+      if (intersection.length >= 2 &&
+          jaccard > bestScore &&
+          jaccard >= _minAcceptScore) {
         bestScore = jaccard;
         bestIntent = entry.value;
       }
@@ -486,9 +546,19 @@ class IntelligentIntentResolver {
 
   int? _extractNumber(String text) {
     const wordNumbers = {
-      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-      'fifteen': 15, 'twenty': 20, 'thirty': 30,
+      'one': 1,
+      'two': 2,
+      'three': 3,
+      'four': 4,
+      'five': 5,
+      'six': 6,
+      'seven': 7,
+      'eight': 8,
+      'nine': 9,
+      'ten': 10,
+      'fifteen': 15,
+      'twenty': 20,
+      'thirty': 30,
     };
     for (final entry in wordNumbers.entries) {
       if (RegExp('\\b${entry.key}\\b').hasMatch(text)) {
@@ -498,6 +568,109 @@ class IntelligentIntentResolver {
     final digitMatch = RegExp(r'\b([1-9]|[12][0-9]|30)\b').firstMatch(text);
     if (digitMatch != null) {
       return int.tryParse(digitMatch.group(1)!);
+    }
+    return null;
+  }
+
+  int? _extractReadingLineNumber(String text) {
+    final digitMatch = RegExp(r'\b([1-9][0-9]{0,2})\b').firstMatch(text);
+    if (digitMatch != null) {
+      return int.tryParse(digitMatch.group(1)!);
+    }
+
+    final normalized = text.replaceAll('-', ' ');
+    final afterLabel = RegExp(
+      r'\b(?:line|sentence)(?:\s+number)?\s+([a-z ]+)$',
+    ).firstMatch(normalized);
+    final beforeLabel = RegExp(
+      r'\b((?:[a-z]+\s+){0,5}[a-z]+)\s+(?:line|sentence)\b',
+    ).firstMatch(normalized);
+    final numberPhrase = afterLabel?.group(1) ?? beforeLabel?.group(1);
+    if (numberPhrase == null) return null;
+
+    const values = <String, int>{
+      'one': 1,
+      'first': 1,
+      'two': 2,
+      'second': 2,
+      'three': 3,
+      'third': 3,
+      'four': 4,
+      'fourth': 4,
+      'five': 5,
+      'fifth': 5,
+      'six': 6,
+      'sixth': 6,
+      'seven': 7,
+      'seventh': 7,
+      'eight': 8,
+      'eighth': 8,
+      'nine': 9,
+      'ninth': 9,
+      'ten': 10,
+      'tenth': 10,
+      'eleven': 11,
+      'eleventh': 11,
+      'twelve': 12,
+      'twelfth': 12,
+      'thirteen': 13,
+      'thirteenth': 13,
+      'fourteen': 14,
+      'fourteenth': 14,
+      'fifteen': 15,
+      'fifteenth': 15,
+      'sixteen': 16,
+      'sixteenth': 16,
+      'seventeen': 17,
+      'seventeenth': 17,
+      'eighteen': 18,
+      'eighteenth': 18,
+      'nineteen': 19,
+      'nineteenth': 19,
+      'twenty': 20,
+      'twentieth': 20,
+      'thirty': 30,
+      'thirtieth': 30,
+      'forty': 40,
+      'fortieth': 40,
+      'fifty': 50,
+      'fiftieth': 50,
+      'sixty': 60,
+      'sixtieth': 60,
+      'seventy': 70,
+      'seventieth': 70,
+      'eighty': 80,
+      'eightieth': 80,
+      'ninety': 90,
+      'ninetieth': 90,
+    };
+
+    var current = 0;
+    var foundNumber = false;
+    for (final token in numberPhrase.trim().split(RegExp(r'\s+'))) {
+      if (token == 'hundred' || token == 'hundredth') {
+        current = (current == 0 ? 1 : current) * 100;
+        foundNumber = true;
+        continue;
+      }
+      final value = values[token];
+      if (value != null) {
+        current += value;
+        foundNumber = true;
+      }
+    }
+    return foundNumber && current > 0 && current <= 999 ? current : null;
+  }
+
+  String? _extractSpeechRate(String text) {
+    if (_containsAny(text, const ['slow', 'slower', 'decrease', 'lower'])) {
+      return 'slow';
+    }
+    if (_containsAny(text, const ['fast', 'faster', 'increase', 'raise'])) {
+      return 'fast';
+    }
+    if (_containsAny(text, const ['normal', 'default', 'standard'])) {
+      return 'normal';
     }
     return null;
   }
@@ -664,6 +837,12 @@ class IntelligentIntentResolver {
     'stop for a moment': const ReadingPause(),
 
     'resume reading': const ReadingResume(),
+    'start reading': const ReadingResume(),
+    'start the reading': const ReadingResume(),
+    'begin reading': const ReadingResume(),
+    'begin the reading': const ReadingResume(),
+    'read aloud': const ReadingResume(),
+    'play document': const ReadingResume(),
     'resume audio': const ReadingResume(),
     'resume speech': const ReadingResume(),
     'continue reading': const ReadingResume(),
@@ -700,8 +879,6 @@ class IntelligentIntentResolver {
     'go back one sentence': const ReadingPrevious(),
     'read previous': const ReadingPrevious(),
     'read the previous sentence': const ReadingPrevious(),
-    'last sentence': const ReadingPrevious(),
-    'last line': const ReadingPrevious(),
     'what was before this': const ReadingPrevious(),
     'rewind': const ReadingPrevious(),
 
@@ -737,6 +914,25 @@ class IntelligentIntentResolver {
     'restart document': const ReadingRestart(),
     'from the beginning': const ReadingRestart(),
     'from the top': const ReadingRestart(),
+    'first line': const ReadingRestart(),
+    'first sentence': const ReadingRestart(),
+    'go to first line': const ReadingRestart(),
+    'go to the first line': const ReadingRestart(),
+    'read first line': const ReadingRestart(),
+    'read the first line': const ReadingRestart(),
+    'beginning of document': const ReadingRestart(),
+    'top of document': const ReadingRestart(),
+
+    'last line': const ReadingLast(),
+    'last sentence': const ReadingLast(),
+    'final line': const ReadingLast(),
+    'final sentence': const ReadingLast(),
+    'go to last line': const ReadingLast(),
+    'go to the last line': const ReadingLast(),
+    'read last line': const ReadingLast(),
+    'read the last line': const ReadingLast(),
+    'end of document': const ReadingLast(),
+    'bottom of document': const ReadingLast(),
 
     'spell': const ReadingSpell(),
     'spell it': const ReadingSpell(),
@@ -750,6 +946,9 @@ class IntelligentIntentResolver {
     'spell sentence': const ReadingSpell(),
     'spell this sentence': const ReadingSpell(),
     'spell current sentence': const ReadingSpell(),
+    'spell current line': const ReadingSpell(),
+    'spell this line': const ReadingSpell(),
+    'spell the current line': const ReadingSpell(),
     'spell the sentence': const ReadingSpell(),
     'spell it out': const ReadingSpell(),
     'spelling': const ReadingSpell(),
@@ -833,6 +1032,12 @@ class IntelligentIntentResolver {
     'go to scanner': const NavigateScanner(),
 
     'open smart ai': const NavigateSmartAi(),
+    'start smart ai': const NavigateSmartAi(),
+    'launch smart ai': const NavigateSmartAi(),
+    'go to smart ai': const NavigateSmartAi(),
+    'switch to smart ai': const NavigateSmartAi(),
+    'switch to online mode': const NavigateSmartAi(),
+    'start online assistant': const NavigateSmartAi(),
     'talk to ai': const NavigateSmartAi(),
     'ask ai': const NavigateSmartAi(),
     'open ai chat': const NavigateSmartAi(),
@@ -918,62 +1123,75 @@ class IntelligentIntentResolver {
     'read settings': const GetAppSettings(),
     'current settings': const GetAppSettings(),
     'settings status': const GetAppSettings(),
+
+    'change feedback mode to audio': const SetFeedbackMode('audio'),
+    'set feedback mode to audio': const SetFeedbackMode('audio'),
+    'use audio feedback': const SetFeedbackMode('audio'),
+    'audio feedback only': const SetFeedbackMode('audio'),
+    'change feedback mode to vibration': const SetFeedbackMode('vibration'),
+    'set feedback mode to vibration': const SetFeedbackMode('vibration'),
+    'use vibration feedback': const SetFeedbackMode('vibration'),
+    'vibration feedback only': const SetFeedbackMode('vibration'),
+    'change feedback mode to both': const SetFeedbackMode('both'),
+    'set feedback mode to both': const SetFeedbackMode('both'),
+    'use audio and vibration feedback': const SetFeedbackMode('both'),
   };
 
   // ─────────── Context-Dependent Aliases ────────────────────────
 
   static final _contextualAliases =
       <VoiceFeatureContext, Map<String, VoiceIntent>>{
-    // In Mobile Detection, bare "stop" means stop detection.
-    VoiceFeatureContext.mobileDetection: {
-      'stop': const StopMobileDetection(),
-      'stop it': const StopMobileDetection(),
-      'pause': const PauseMobileDetection(),
-      'resume': const ResumeMobileDetection(),
-      'continue': const ResumeMobileDetection(),
-    },
-    // In Scanner reading, bare contextual commands map cleanly.
-    VoiceFeatureContext.scannerReading: {
-      'stop': const Silence(),
-      'stop it': const Silence(),
-      'quiet': const Silence(),
-      'silence': const Silence(),
-      'pause': const ReadingPause(),
-      'hold': const ReadingPause(),
-      'hold on': const ReadingPause(),
-      'resume': const ReadingResume(),
-      'continue': const ReadingResume(),
-      'play': const ReadingResume(),
-      'go on': const ReadingResume(),
-      'next': const ReadingNext(),
-      'previous': const ReadingPrevious(),
-      'back': const ReadingPrevious(),
-      'go back': const ReadingPrevious(),
-      'repeat': const ReadingRepeat(),
-      'again': const ReadingRepeat(),
-      'restart': const ReadingRestart(),
-      'spell': const ReadingSpell(),
-      'slow down': const SetReadingProfile('learning'),
-      'speed up': const SetReadingProfile('skim'),
-      'copy': const CopyScannedText(),
-      'rescan': const RescanDocument(),
-      'scan again': const RescanDocument(),
-      'new scan': const RescanDocument(),
-    },
-    // In Scanner capture, bare verbs map to capture/camera actions.
-    VoiceFeatureContext.scannerCapture: {
-      'scan': const ScanDocument(),
-      'capture': const ScanDocument(),
-      'photo': const ScanDocument(),
-      'picture': const ScanDocument(),
-      'take photo': const ScanDocument(),
-      'take picture': const ScanDocument(),
-      'close scanner': const NavigateBack(),
-      'exit scanner': const NavigateBack(),
-      'close': const NavigateBack(),
-      'exit': const NavigateBack(),
-    },
-  };
+        // In Mobile Detection, bare "stop" means stop detection.
+        VoiceFeatureContext.mobileDetection: {
+          'stop': const StopMobileDetection(),
+          'stop it': const StopMobileDetection(),
+          'pause': const PauseMobileDetection(),
+          'resume': const ResumeMobileDetection(),
+          'continue': const ResumeMobileDetection(),
+        },
+        // In Scanner reading, bare contextual commands map cleanly.
+        VoiceFeatureContext.scannerReading: {
+          'stop': const Silence(),
+          'stop it': const Silence(),
+          'quiet': const Silence(),
+          'silence': const Silence(),
+          'pause': const ReadingPause(),
+          'hold': const ReadingPause(),
+          'hold on': const ReadingPause(),
+          'resume': const ReadingResume(),
+          'start': const ReadingResume(),
+          'continue': const ReadingResume(),
+          'play': const ReadingResume(),
+          'go on': const ReadingResume(),
+          'next': const ReadingNext(),
+          'previous': const ReadingPrevious(),
+          'back': const ReadingPrevious(),
+          'go back': const ReadingPrevious(),
+          'repeat': const ReadingRepeat(),
+          'again': const ReadingRepeat(),
+          'restart': const ReadingRestart(),
+          'spell': const ReadingSpell(),
+          'slow down': const SetReadingProfile('learning'),
+          'speed up': const SetReadingProfile('skim'),
+          'copy': const CopyScannedText(),
+          'rescan': const RescanDocument(),
+          'scan again': const RescanDocument(),
+          'new scan': const RescanDocument(),
+        },
+        // In Scanner capture, bare verbs map to capture/camera actions.
+        VoiceFeatureContext.scannerCapture: {
+          'scan': const ScanDocument(),
+          'capture': const ScanDocument(),
+          'photo': const ScanDocument(),
+          'picture': const ScanDocument(),
+          'take photo': const ScanDocument(),
+          'take picture': const ScanDocument(),
+          'close scanner': const NavigateBack(),
+          'exit scanner': const NavigateBack(),
+          'close': const NavigateBack(),
+          'exit': const NavigateBack(),
+        },
+      };
 
   // ─────────── Conversation Patterns ────────────────────────────
 
@@ -989,7 +1207,9 @@ class IntelligentIntentResolver {
     'your name': const WhoAreYou(),
 
     'goodbye': const DismissAssistant(),
+    'good bye': const DismissAssistant(),
     'bye': const DismissAssistant(),
+    'by': const DismissAssistant(),
     'dismiss': const DismissAssistant(),
     'stop listening': const DismissAssistant(),
     'go to sleep': const DismissAssistant(),

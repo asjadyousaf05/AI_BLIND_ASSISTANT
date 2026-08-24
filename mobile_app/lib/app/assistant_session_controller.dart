@@ -46,8 +46,6 @@ class AssistantControllerState {
     this.errorMessage,
     this.failureKind,
     this.pendingRequestId,
-    this.handsFreeActive = false,
-    this.handsFreeStatus = 'Hands-free voice is preparing.',
   });
 
   final AssistantSessionState sessionState;
@@ -65,8 +63,6 @@ class AssistantControllerState {
 
   /// Pending request ID for tool confirmation idempotency.
   final String? pendingRequestId;
-  final bool handsFreeActive;
-  final String handsFreeStatus;
 
   bool get isPaired => credential?.isValid ?? false;
 
@@ -81,8 +77,6 @@ class AssistantControllerState {
     String? pendingRequestId,
     bool clearPendingResponse = false,
     bool clearError = false,
-    bool? handsFreeActive,
-    String? handsFreeStatus,
   }) => AssistantControllerState(
     sessionState: sessionState ?? this.sessionState,
     credential: credential ?? this.credential,
@@ -94,8 +88,6 @@ class AssistantControllerState {
     errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
     failureKind: clearError ? null : (failureKind ?? this.failureKind),
     pendingRequestId: pendingRequestId ?? this.pendingRequestId,
-    handsFreeActive: handsFreeActive ?? this.handsFreeActive,
-    handsFreeStatus: handsFreeStatus ?? this.handsFreeStatus,
   );
 }
 
@@ -201,6 +193,12 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
     ref
         .read(appSettingsControllerProvider.notifier)
         .setHandsFreeAssistantEnabled(enabled);
+    final kernel = ref.read(visionVoiceKernelProvider.notifier);
+    if (enabled) {
+      await kernel.startHandsFree();
+    } else {
+      await kernel.stopHandsFree();
+    }
   }
 
   bool get _isVisionActive {
@@ -213,15 +211,13 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
     return isMobileActive || currentRoute == RoutePaths.mobileAssistance;
   }
 
-
-
   Future<void> _resumeHandsFree({bool acceptNextCommand = false}) async {
     if (!ref.read(appSettingsControllerProvider).handsFreeAssistantEnabled) {
       return;
     }
-    await _speechRecognizer.resumeHandsFree(
-      acceptNextCommand: acceptNextCommand,
-    );
+    await ref
+        .read(visionVoiceKernelProvider.notifier)
+        .resumeAfterExternalRecording(acceptNextCommand: acceptNextCommand);
   }
 
   /// Begin listening — called when the user presses and holds the button.
@@ -231,13 +227,8 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
 
     _sessionInProgress = true;
     try {
-      if (state.handsFreeActive) {
-        await _speechRecognizer.stopHandsFree();
-        state = state.copyWith(
-          handsFreeActive: false,
-          handsFreeStatus:
-              'Hands-free voice is paused during manual recording.',
-        );
+      if (ref.read(visionVoiceKernelProvider).isHandsFreeActive) {
+        await ref.read(visionVoiceKernelProvider.notifier).stopHandsFree();
       }
       // 1. Microphone permission. Pairing is deliberately not required for
       // app-control speech because recognition and command parsing are local.
@@ -305,6 +296,10 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
     } finally {
       if (state.sessionState != AssistantSessionState.listening) {
         _sessionInProgress = false;
+        await _resumeHandsFree(
+          acceptNextCommand:
+              appRouteObserver.currentRoute == RoutePaths.assistant,
+        );
       }
     }
   }
@@ -335,6 +330,12 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
       await _submitRecognizedTranscript(speechResult.transcript);
     } finally {
       _sessionInProgress = false;
+      if (!ref.read(visionVoiceKernelProvider).isHandsFreeActive) {
+        await _resumeHandsFree(
+          acceptNextCommand:
+              appRouteObserver.currentRoute == RoutePaths.assistant,
+        );
+      }
     }
   }
 
@@ -346,6 +347,10 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
     } finally {
       _transitionTo(AssistantSessionState.cancelled);
       _sessionInProgress = false;
+      await _resumeHandsFree(
+        acceptNextCommand:
+            appRouteObserver.currentRoute == RoutePaths.assistant,
+      );
     }
   }
 
@@ -362,42 +367,23 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
 
       if (feedback != null) {
         if (feedback.isNotEmpty) {
-           _addAssistantMessage(feedback);
+          _addAssistantMessage(feedback);
         }
-        state = state.copyWith(sessionState: AssistantSessionState.completed, lastTranscript: query);
-        _sessionInProgress = false;
-        return;
-      }
-
-      _transitionTo(AssistantSessionState.checkingConnection);
-      final credential = state.credential;
-      if (credential == null || !credential.isValid) {
-        _fail(
-          AssistantFailureKind.backendUnreachable,
-          'No assistant backend is paired.',
+        state = state.copyWith(
+          sessionState: AssistantSessionState.completed,
+          lastTranscript: query,
         );
+        _sessionInProgress = false;
+        if (!ref.read(visionVoiceKernelProvider).isHandsFreeActive) {
+          await _resumeHandsFree(
+            acceptNextCommand:
+                appRouteObserver.currentRoute == RoutePaths.assistant,
+          );
+        }
         return;
       }
 
-      final assistantRepo = ref.read(assistantRepositoryProvider);
-      final version = await assistantRepo.checkHealth(credential);
-      if (version == null) {
-        _transitionTo(AssistantSessionState.laptopUnavailable);
-        return;
-      }
-
-      _transitionTo(AssistantSessionState.thinking);
-      _addUserMessage(query);
-
-      state = state.copyWith(lastTranscript: query);
-
-      final response = await assistantRepo.sendTextQuery(
-        credential: credential,
-        query: query,
-        conversationHistory: state.conversationHistory,
-      );
-
-      await _handleResponse(response, credential);
+      await _sendConversationToBackend(query);
     } on AssistantAuthException {
       _fail(
         AssistantFailureKind.authenticationFailed,
@@ -414,6 +400,63 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
         _sessionInProgress = false;
       }
     }
+  }
+
+  /// Sends a wake-word transcript directly to Smart AI after the voice kernel
+  /// has already determined that it is not a deterministic app command.
+  Future<void> sendConversationQuery(String query) async {
+    if (_sessionInProgress || query.trim().isEmpty) return;
+    if (!state.sessionState.canStartNewSession) return;
+
+    _sessionInProgress = true;
+    try {
+      await _sendConversationToBackend(query);
+    } on AssistantAuthException {
+      _fail(
+        AssistantFailureKind.authenticationFailed,
+        AssistantFailureKind.authenticationFailed.recoveryHint,
+      );
+    } on AssistantNetworkException {
+      _transitionTo(AssistantSessionState.laptopUnavailable);
+    } catch (error) {
+      _fail(AssistantFailureKind.unexpected, 'Unexpected error: $error');
+    } finally {
+      if (state.sessionState.isTerminal ||
+          state.sessionState == AssistantSessionState.idle ||
+          state.sessionState == AssistantSessionState.completed) {
+        _sessionInProgress = false;
+      }
+    }
+  }
+
+  Future<void> _sendConversationToBackend(String query) async {
+    _transitionTo(AssistantSessionState.checkingConnection);
+    final credential = state.credential;
+    if (credential == null || !credential.isValid) {
+      _fail(
+        AssistantFailureKind.backendUnreachable,
+        'No assistant backend is paired.',
+      );
+      return;
+    }
+
+    final assistantRepo = ref.read(assistantRepositoryProvider);
+    final version = await assistantRepo.checkHealth(credential);
+    if (version == null) {
+      _transitionTo(AssistantSessionState.laptopUnavailable);
+      return;
+    }
+
+    _transitionTo(AssistantSessionState.thinking);
+    _addUserMessage(query);
+    state = state.copyWith(lastTranscript: query);
+
+    final response = await assistantRepo.sendTextQuery(
+      credential: credential,
+      query: query,
+      conversationHistory: state.conversationHistory,
+    );
+    await _handleResponse(response, credential);
   }
 
   /// Confirm a pending tool action.
@@ -550,7 +593,7 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
 
       if (feedback != null) {
         if (feedback.isNotEmpty) {
-           _addAssistantMessage(feedback);
+          _addAssistantMessage(feedback);
         }
         state = state.copyWith(sessionState: AssistantSessionState.completed);
         _sessionInProgress = false;
@@ -873,9 +916,8 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
         'set_high_contrast_enabled' => _setHighContrastEnabled(toolCall),
         'set_large_text_enabled' => _setLargeTextEnabled(toolCall),
         'set_reduced_motion_enabled' => _setReducedMotionEnabled(toolCall),
-        'set_hands_free_assistant_enabled' => _setHandsFreeAssistantEnabled(
-          toolCall,
-        ),
+        'set_hands_free_assistant_enabled' =>
+          await _setHandsFreeAssistantEnabled(toolCall),
         'set_announcement_cooldown' => _setAnnouncementCooldown(toolCall),
         'get_raspberry_pi_status' => _getPiStatus(toolCall.name),
         'discover_raspberry_pi' => await _discoverPi(toolCall.name),
@@ -1123,9 +1165,9 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
             .setReducedMotionEnabled,
       );
 
-  AssistantToolResult _setHandsFreeAssistantEnabled(
+  Future<AssistantToolResult> _setHandsFreeAssistantEnabled(
     AssistantToolCall toolCall,
-  ) {
+  ) async {
     final enabled = toolCall.arguments['enabled'];
     if (enabled is! bool) {
       return AssistantToolResult.error(
@@ -1136,12 +1178,11 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
     ref
         .read(appSettingsControllerProvider.notifier)
         .setHandsFreeAssistantEnabled(enabled);
-    if (!enabled) {
-      unawaited(_speechRecognizer.stopHandsFree());
-      state = state.copyWith(
-        handsFreeActive: false,
-        handsFreeStatus: 'Hands-free voice is off.',
-      );
+    final kernel = ref.read(visionVoiceKernelProvider.notifier);
+    if (enabled) {
+      await kernel.startHandsFree();
+    } else {
+      await kernel.stopHandsFree();
     }
     return AssistantToolResult.ok(toolCall.name, data: {'enabled': enabled});
   }
@@ -1575,10 +1616,7 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
     _transitionTo(AssistantSessionState.speaking);
     await _speak(text);
     _transitionTo(AssistantSessionState.completed);
-    final wasDismissed =
-        text.toLowerCase().contains('goodbye') ||
-        text.toLowerCase().contains('bye');
-    if (acceptNextCommand && !wasDismissed && !_isVisionActive) {
+    if (acceptNextCommand && !_isVisionActive) {
       await _resumeHandsFree(acceptNextCommand: true);
     } else {
       await _resumeHandsFree(acceptNextCommand: false);
