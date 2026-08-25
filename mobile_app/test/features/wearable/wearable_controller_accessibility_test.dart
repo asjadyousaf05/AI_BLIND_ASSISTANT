@@ -91,7 +91,9 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text(WearableDefaults.host), findsOneWidget);
+      // The default hostname appears in the pre-filled host text field and
+      // also in the connection guidance card below it.
+      expect(find.text(WearableDefaults.host), findsWidgets);
       expect(tester.takeException(), isNull);
     } finally {
       semantics.dispose();

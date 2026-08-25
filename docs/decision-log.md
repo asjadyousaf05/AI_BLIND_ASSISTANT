@@ -734,3 +734,45 @@
   `raspberry_pi/config/wearable.env.example`
 - Related requirements: FR-010, FR-011, FR-017, NFR-OFFLINE-001,
   NFR-SEC-002, NFR-SEC-004, NFR-MAINT-001, NFR-MAINT-002
+
+## ADR-058: mDNS Hostname Default and SSH Reverse Tunnel for Public-WiFi
+
+- Status: Accepted
+- Context: The Pi's DHCP address changes every time it connects to a new
+  network, making the previously hardcoded IP `10.141.17.148` in
+  `WearableDefaults.host` unreliable. The Pi hostname `rpi3-ml` is fixed by
+  the OS install and never changes. Additionally, university/public WiFi
+  networks often enforce client isolation, blocking mDNS between devices even
+  on the same SSID.
+- Decision:
+  1. Replace the hardcoded IP with `rpi3-ml.local` as the default. Android NSD
+     resolves `.local` mDNS names automatically on non-isolated LANs. The Pi
+     already advertises `_aiba-wearable._tcp.local.` via `MdnsAdvertiser`.
+  2. Add `raspberry_pi/scripts/reverse_tunnel.sh` — a POSIX shell script that
+     opens an SSH reverse tunnel from the Pi's port 8765 to the owner's laptop
+     port 8765 (`autossh` preferred, `ssh -N -R` fallback, `BatchMode=yes`).
+     When client isolation blocks mDNS, the user runs the tunnel and enters the
+     laptop's private LAN IP in the app host field instead.
+  3. Add `raspberry_pi/systemd/ai-blind-assistant-tunnel.service` — disabled by
+     default, opt-in for users who want the tunnel to start automatically.
+  4. Tunnel target is validated to be a private/loopback address; the script
+     rejects public internet addresses at runtime.
+- Consequences:
+  - The phone connects to the Pi on any owner-controlled LAN without IP
+    management.
+  - On public WiFi the user performs one extra setup step (run tunnel script,
+    enter laptop IP) which is documented in the app UI and in the env file.
+  - No credentials, IPs, or SSH passwords are stored in Android or Flutter.
+  - The tunnel operates entirely within a private LAN; port 8765 is never
+    forwarded to the internet.
+  - Protocol v1 is still authenticated but unencrypted; the restriction to
+    private LAN remains mandatory.
+- Verification: `WearableDefaults.host` set to `rpi3-ml.local`; tunnel script
+  and systemd unit present; in-app guidance card added; Flutter suite 318/0,
+  Pi suite 15/0, analyzer 0 findings.
+- Related files: `mobile_app/lib/core/constants/wearable_defaults.dart`,
+  `raspberry_pi/scripts/reverse_tunnel.sh`,
+  `raspberry_pi/systemd/ai-blind-assistant-tunnel.service`,
+  `raspberry_pi/config/wearable.env.example`,
+  `mobile_app/lib/features/raspberry_pi/presentation/raspberry_pi_screen.dart`
+

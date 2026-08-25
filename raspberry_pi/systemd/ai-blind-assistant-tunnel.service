@@ -1,0 +1,44 @@
+[Unit]
+Description=AI Blind Assistant Pi SSH reverse tunnel
+Documentation=file:///opt/ai-blind-assistant/service/README.md
+Wants=network-online.target
+After=network-online.target
+# Restart if the SSH connection drops (autossh/ssh exits unexpectedly).
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=aiba
+Group=aiba
+# Load the same env file as the main service so AIBA_PORT, AIBA_TUNNEL_TARGET_HOST,
+# and AIBA_TUNNEL_TARGET_USER are available without duplication.
+EnvironmentFile=/etc/ai-blind-assistant/wearable.env
+ExecStart=/opt/ai-blind-assistant/service/scripts/reverse_tunnel.sh
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=30
+TimeoutStopSec=10
+KillSignal=SIGTERM
+
+# Minimal hardening for an SSH client process.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# SSH needs access to ~/.ssh for host keys and BatchMode key auth.
+ProtectHome=read-only
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+# Enable only when public-WiFi fallback is needed; disabled by default.
+WantedBy=network-online.target

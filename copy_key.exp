@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout 10
+spawn ssh-copy-id -i /Users/mm/.ssh/id_ed25519_pi.pub asjad@10.141.16.27
+expect {
+    "Are you sure you want to continue connecting" {
+        send "yes\r"
+        exp_continue
+    }
+    "password:" {
+        send "asjad\r"
+        exp_continue
+    }
+    eof
+}

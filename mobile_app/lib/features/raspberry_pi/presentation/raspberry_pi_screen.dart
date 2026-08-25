@@ -178,10 +178,23 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
           enabled: viewState.canRunAction && !connected,
           onUseAddress: () => _selectManualAddress(controller),
         ),
+        const SizedBox(height: AppSpacing.space3),
+        const FeatureNoteCard(
+          icon: AppIcons.info,
+          title: 'Connecting to your Pi',
+          description:
+              'On the same Wi-Fi as the Pi? '
+              'Leave the address as rpi3-ml.local — '
+              'your phone finds the Pi automatically. '
+              'On a different or public network, '
+              'run the reverse_tunnel.sh script on the Pi first, '
+              "then enter your laptop's local IP address here instead.",
+        ),
         if (selectedDevice != null) ...[
           const SizedBox(height: AppSpacing.space5),
           _SelectedDeviceCard(device: selectedDevice),
         ],
+
         if (!connected) ...[
           const SizedBox(height: AppSpacing.space5),
           const FeatureNoteCard(

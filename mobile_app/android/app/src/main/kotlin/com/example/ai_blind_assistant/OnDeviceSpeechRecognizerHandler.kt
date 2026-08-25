@@ -328,16 +328,23 @@ class OnDeviceSpeechRecognizerHandler(
         model: Model,
         profile: VisionAiDecoderProfile,
     ): Recognizer {
-        val recognizer = Recognizer(
-            model,
-            VOSK_SAMPLE_RATE,
-            VisionAiSpeechGrammar.jsonFor(profile),
-        )
-        recognizer.setMaxAlternatives(VisionAiVoskContract.maxAlternatives)
-        recognizer.setWords(profile != VisionAiDecoderProfile.WAKE)
-        recognizer.setPartialWords(false)
-        configureEndpointer(recognizer, profile)
-        return recognizer
+        // Vosk's 3-arg constructor (vosk_recognizer_new_grm) passes the JSON
+        // grammar string directly to the native FST builder.  An empty grammar
+        // array ("[]") does NOT mean "use the full language model" at the
+        // native layer — it results in a null FST pointer that crashes
+        // InitDecoding with SIGSEGV.  The correct way to get full-vocabulary
+        // (free-form) recognition for Smart AI conversation is the 2-arg
+        // constructor (vosk_recognizer_new), which uses the bundled HCLG graph.
+        val createdRecognizer = if (profile == VisionAiDecoderProfile.CONVERSATION) {
+            Recognizer(model, VOSK_SAMPLE_RATE)
+        } else {
+            Recognizer(model, VOSK_SAMPLE_RATE, VisionAiSpeechGrammar.jsonFor(profile))
+        }
+        createdRecognizer.setMaxAlternatives(VisionAiVoskContract.maxAlternatives)
+        createdRecognizer.setWords(profile != VisionAiDecoderProfile.WAKE)
+        createdRecognizer.setPartialWords(false)
+        configureEndpointer(createdRecognizer, profile)
+        return createdRecognizer
     }
 
     private fun configureEndpointer(

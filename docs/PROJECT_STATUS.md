@@ -1,60 +1,47 @@
 # Project Status
 
-Last updated: 2026-08-20
+Last updated: 2026-08-25
 
 ## Overview
 
 | Field | Status |
 |---|---|
-| Current work | Module 57 exclusive code-free Raspberry Pi enrollment |
-| Overall state | Cross-stack implementation/release verified; physical Pi connection blocked by endpoint/network state |
+| Current work | Module 58 dynamic Pi discovery and public-WiFi SSH tunnel fallback |
+| Overall state | Cross-stack implementation verified; physical Pi connection pending deployment |
 | Mobile stack | Flutter 3.44.5 / Dart 3.12.2, Android min SDK 24, target 36 |
 | Architecture | Feature-first layers, Riverpod DI/state, centralized named routes and one voice/TTS owner |
 | Mobile assistance | CameraX, bundled YOLO/LiteRT, local TTS, bounded haptics |
-| Wearable assistance | Exclusive first-phone enrollment, authenticated local WebSocket v1, Pi NCNN/Picamera2, phone-priority TTS with Pi fallback |
+| Wearable assistance | mDNS hostname default, SSH tunnel fallback, exclusive first-phone enrollment, authenticated local WebSocket v1, Pi NCNN/Picamera2, phone-priority TTS with Pi fallback |
 | Offline voice | One strict branded wake per foreground session, focused contextual grammars until goodbye |
 | Smart AI | Same phone-local Vosk input; unmatched transcript text to paired Gemini-first/Ollama-fallback backend |
 | Release metadata | `1.4.2+2042`; ARM64 installed on TECNO BG6 as ABI-adjusted code `4042` |
 
 ## Implemented Capabilities
 
-Wearable Mode is configured for `10.141.17.148:8765`, retains mDNS/manual
-private-host discovery, and now exposes no Pi pairing-code field. On first use,
-one `Connect & Start Detection` action sends an exclusive enrollment request,
-receives a random application credential, stores it through Android Keystore,
-authenticates, synchronizes settings, and starts the Pi assistance pipeline.
-Later sessions reuse the credential automatically.
+Wearable Mode default host is now `rpi3-ml.local` (Pi mDNS hostname). On the
+same LAN the phone resolves the hostname automatically via Android NSD. On
+public/isolated WiFi the user runs `reverse_tunnel.sh` on the Pi to forward
+port 8765 through the laptop and enters the laptop IP in the app host field.
 
-The Pi permits this operation only when first-client enrollment is explicitly
-enabled, the peer is private/loopback, and no non-revoked phone credential
-exists. Enrollment is atomic and then closes. All later messages retain
-nonce-bound HMAC authentication, integrity, replay protection and revocation.
-Linux login credentials are not used by the app and no SSH code is packaged.
-This first-use mechanism is trust-on-first-use and must run on an
-owner-controlled private network.
+The Pi permits first enrollment only when explicitly enabled, the peer is
+private/loopback, and no non-revoked phone credential exists. Enrollment is
+atomic; all later messages retain nonce-bound HMAC authentication, integrity,
+replay protection, and revocation. Linux login credentials are not used by the
+app and no SSH code is packaged in Android.
 
 The Pi keeps camera capture and NCNN inference local. Raw frames never leave
-the Pi. Stability/cooldown-gated priority events target the authenticated phone
-and Flutter speaks relative-position alerts through `VisionVoiceKernelV3`; Pi
-speech remains the disconnect fallback. Ordinary telemetry stays silent.
+the Pi. Priority events target the authenticated phone and Flutter speaks
+relative-position alerts through `VisionVoiceKernelV3`; Pi speech remains the
+disconnect fallback.
 
 The foreground offline assistant and Document Scanner capabilities from
-Modules 53-55 remain present and unchanged by Module 57.
+Modules 53-55 remain present and unchanged.
 
 ## Latest Evidence
 
-- Flutter analyzer: 0 findings; full Flutter suite: 319 passed, 0 failed,
-  including Flutter against an actual Python simulator process.
-- Pi Ruff: clean; Pi suite: 15 passed, 46 Python 3.14 upstream warnings.
-- Android `:app:testDebugUnitTest`: build successful.
-- Release splits: 113.4 MB ARM, 125.8 MB ARM64, 130.7 MB x86_64.
-- ARM64 SHA-256:
-  `a4ab50e4ef27c73104eec96c11854dbb088a5e407ecf175eb87d8abbf6a8717c`.
-- TECNO BG6: data-preserving release install succeeded as `1.4.2` / code
-  `4042`; process alive/focused and no app-scoped fatal marker found.
-- Pi endpoint retry: phone ping 2/2 lost; Mac TCP 22 and 8765 timed out.
-- Network mismatch remains: phone Wi-Fi `10.141.10.93/21`; supplied Pi
-  `10.141.17.148` is outside that local `/21`.
+- Flutter analyzer: 0 findings; full Flutter suite: 318 passed, 0 failed.
+- Pi Ruff: clean; Pi suite: 15 passed, 0 failed.
+- Dart formatting: 226 files, 0 changed.
 
 ## Open Acceptance and Limitations
 
@@ -77,8 +64,15 @@ human assistance, situational awareness, or user judgment.
 
 ## Exact Next Action
 
-Place the Pi and TECNO BG6 on the same owner-controlled private router/hotspot,
-confirm the current Pi address and TCP 8765, deploy/start the matching Module
-57 service with first-client enrollment enabled, and tap `Connect & Start
-Detection`. Record first enrollment, authenticated running state, phone audio,
-second-client rejection, disconnect fallback and Pi camera/model logs.
+Same WiFi as Pi (home router / personal hotspot):
+1. `sh raspberry_pi/scripts/deploy.sh asjad rpi3-ml auto`
+2. `ssh asjad@rpi3-ml sudo systemctl restart ai-blind-assistant-pi`
+3. App host shows `rpi3-ml.local` — tap Connect & Start Detection.
+
+Public/university WiFi:
+1. Deploy as above.
+2. Find laptop LAN IP: `ifconfig | grep inet`.
+3. On Pi: `sh /opt/ai-blind-assistant/service/scripts/reverse_tunnel.sh asjad <LAPTOP_LAN_IP>`
+4. In app: change host to `<LAPTOP_LAN_IP>`, tap Connect & Start Detection.
+
+Record enrollment, running detection, phone-speaker alert, and TalkBack focus.
