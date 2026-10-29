@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../../domain/services/on_device_speech_recognition_service.dart';
+import '../../domain/services/reader_barge_in_recognition.dart';
+import '../../domain/services/smart_ai_foreground_recognition.dart';
+import '../../domain/services/voice_listening_feedback.dart';
 
 /// Uses the best available explicitly offline Android recognition engine.
 ///
@@ -10,12 +13,29 @@ import '../../domain/services/on_device_speech_recognition_service.dart';
 /// uses the Vosk model bundled in the APK. It never calls Android's ordinary
 /// recognizer because that API may use a remote service.
 class AndroidOnDeviceSpeechRecognitionService
-    implements OnDeviceSpeechRecognitionService {
+    implements
+        OnDeviceSpeechRecognitionService,
+        ReaderBargeInRecognition,
+        SmartAiForegroundRecognition,
+        VoiceListeningFeedback {
   static const _channel = MethodChannel(
     'ai_blind_assistant/on_device_speech_recognizer',
   );
   final StreamController<HandsFreeSpeechEvent> _handsFreeEvents =
       StreamController<HandsFreeSpeechEvent>.broadcast();
+
+  bool _smartAiActive = false;
+  final _smartAiGoodbyes = StreamController<void>.broadcast();
+  @override
+  Stream<void> get smartAiGoodbyes => _smartAiGoodbyes.stream;
+  @override
+  Future<void> setSmartAiControlsActive(bool active) async {
+    _smartAiActive = false;
+    await _channel.invokeMethod<void>('setSmartAiControlsActive', {
+      'active': active,
+    });
+    _smartAiActive = active;
+  }
 
   AndroidOnDeviceSpeechRecognitionService() {
     _channel.setMethodCallHandler(_onNativeCallback);
@@ -25,9 +45,16 @@ class AndroidOnDeviceSpeechRecognitionService
   Stream<HandsFreeSpeechEvent> get handsFreeEvents => _handsFreeEvents.stream;
 
   Future<dynamic> _onNativeCallback(MethodCall call) async {
+    if (call.method == 'onSmartAiGoodbye') {
+      if (_smartAiActive && !_smartAiGoodbyes.isClosed) {
+        _smartAiGoodbyes.add(null);
+      }
+      return null;
+    }
     final eventType = switch (call.method) {
       'onHandsFreeWake' => HandsFreeSpeechEventType.wake,
       'onHandsFreeCommand' => HandsFreeSpeechEventType.command,
+      'onReaderCommandCandidate' => HandsFreeSpeechEventType.readerCandidate,
       'onHandsFreeTimeout' => HandsFreeSpeechEventType.timeout,
       'onHandsFreeError' => HandsFreeSpeechEventType.error,
       _ => null,
@@ -38,7 +65,13 @@ class AndroidOnDeviceSpeechRecognitionService
         ? arguments['transcript']?.toString().trim()
         : null;
     _handsFreeEvents.add(
-      HandsFreeSpeechEvent(type: eventType, transcript: transcript),
+      HandsFreeSpeechEvent(
+        type: eventType,
+        transcript: transcript,
+        candidateId: arguments is Map
+            ? arguments['candidateId']?.toString()
+            : null,
+      ),
     );
     return null;
   }
@@ -166,9 +199,13 @@ class AndroidOnDeviceSpeechRecognitionService
 
   @override
   Future<void> resumeHandsFree({bool acceptNextCommand = false}) =>
-      _bestEffortMethod('resumeHandsFree', {
+      _requiredHandsFreeMethod('resumeHandsFree', {
         'acceptNextCommand': acceptNextCommand,
       });
+
+  @override
+  Future<void> playListeningReadyCue() =>
+      _bestEffortMethod('playListeningReadyCue');
 
   @override
   Future<void> stopHandsFree() => _bestEffortMethod('stopHandsFree');
@@ -176,6 +213,56 @@ class AndroidOnDeviceSpeechRecognitionService
   @override
   Future<void> setRecognitionProfile(String profile) =>
       _bestEffortMethod('setRecognitionProfile', {'profile': profile});
+
+  Future<void> _requiredHandsFreeMethod(
+    String method,
+    Map<String, dynamic> arguments,
+  ) async {
+    try {
+      final ready = await _channel
+          .invokeMethod<bool>(method, arguments)
+          .timeout(const Duration(seconds: 3));
+      if (ready != true) {
+        throw const OnDeviceSpeechRecognitionException(
+          'resume_failed',
+          'The offline microphone did not resume.',
+        );
+      }
+    } on MissingPluginException {
+      throw const OnDeviceSpeechRecognitionException(
+        'unavailable',
+        'Offline speech recognition is unavailable in this build.',
+      );
+    } on PlatformException catch (error) {
+      throw OnDeviceSpeechRecognitionException(
+        error.code,
+        error.message ?? 'The offline microphone did not resume.',
+      );
+    } on TimeoutException {
+      throw const OnDeviceSpeechRecognitionException(
+        'resume_timeout',
+        'The offline microphone did not respond.',
+      );
+    }
+  }
+
+  @override
+  Future<void> setReaderPlaybackActive(bool active) =>
+      _bestEffortMethod('setReaderPlaybackActive', {'active': active});
+
+  @override
+  Future<bool> acceptReaderCommandCandidate(String candidateId) async {
+    try {
+      return await _channel.invokeMethod<bool>('acceptReaderCommandCandidate', {
+            'candidateId': candidateId,
+          }) ==
+          true;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
 
   Future<void> _bestEffortMethod(
     String method, [
@@ -192,6 +279,7 @@ class AndroidOnDeviceSpeechRecognitionService
 
   @override
   Future<void> dispose() async {
+    await _smartAiGoodbyes.close();
     await stopHandsFree();
     await cancelListening();
     _channel.setMethodCallHandler(null);

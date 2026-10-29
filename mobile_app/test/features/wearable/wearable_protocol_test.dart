@@ -10,12 +10,28 @@ import 'package:ai_blind_assistant/domain/enums/protocol_message_type.dart';
 import 'package:ai_blind_assistant/domain/enums/wearable_direction.dart';
 import 'package:ai_blind_assistant/infrastructure/networking/bounded_retry_policy.dart';
 import 'package:ai_blind_assistant/infrastructure/networking/protocol_codec.dart';
+import 'package:ai_blind_assistant/infrastructure/networking/protocol_message_factory.dart';
 import 'package:ai_blind_assistant/infrastructure/networking/sequence_deduplicator.dart';
 import 'package:ai_blind_assistant/infrastructure/networking/wearable_authenticator.dart';
 import 'package:ai_blind_assistant/infrastructure/networking/wearable_settings_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('session clock ignores later phone wall-clock corrections', () {
+    var wallClock = DateTime.utc(2036);
+    final factory = ProtocolMessageFactory(clock: () => wallClock);
+    factory.synchronizePeerClock(DateTime.utc(2020));
+    wallClock = DateTime.utc(2000);
+    final command = factory.create(ProtocolMessageType.startAssistance);
+    final heartbeat = ProtocolMessageFactory(
+      clock: () => wallClock,
+    ).create(ProtocolMessageType.heartbeat, payload: {'kind': 'ping'});
+    final first = factory.stampForSession(command);
+    final second = factory.stampForSession(heartbeat);
+    expect(first.timestamp.year, 2020);
+    expect(second.timestamp.year, 2020);
+    expect(second.sequence, greaterThan(first.sequence));
+  });
   const secret = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
   final timestamp = DateTime.parse('2026-08-09T12:34:56.123456Z');
   final credential = WearableCredential(
@@ -29,6 +45,52 @@ void main() {
     secret: secret,
     createdAt: timestamp,
   );
+
+  for (final vector in {
+    '2026-08-09T12:34:56.123000Z':
+        'c2d6e29f54c5a019f63ac43933eecfee8384a57c3fc468d5d111dff6f9363e34',
+    '2026-08-09T12:34:56.000000Z':
+        '7e017a9b9b6b0f349f84b2991a6bacec642ae05175fb87b37c12aaaf4de2707d',
+  }.entries) {
+    test('Python timestamp HMAC preserves trailing zeros ${vector.key}', () {
+      final message = ProtocolEnvelope(
+        protocolVersion: 1,
+        type: ProtocolMessageType.heartbeat,
+        messageId: '12345678abcdef00',
+        timestamp: DateTime.parse(vector.key),
+        encodedTimestamp: vector.key,
+        sequence: 4,
+        payload: {'kind': 'ping'},
+        authenticationTag: vector.value,
+      );
+      const codec = ProtocolCodec();
+      final decoded = codec.decode(codec.encode(message));
+      expect(decoded.timestampText, vector.key);
+      expect(
+        const AuthenticatedEnvelopeSigner(
+          sessionNonce: 'server-nonce',
+        ).verify(decoded, credential),
+        isTrue,
+      );
+    });
+  }
+
+  test('small Python health numbers retain cross-language HMAC integrity', () {
+    const raw =
+        '{"protocolVersion":1,"type":"device_health",'
+        '"messageId":"12345678abcdef01","timestamp":"2026-08-09T12:34:56.123000Z",'
+        '"sequence":5,"payload":{"deviceId":"pi-test","uptimeSeconds":1,'
+        '"memoryUsedFraction":1e-05,"cameraState":"ready","modelState":"ready",'
+        '"measuredAt":"2026-08-09T12:34:56.123000Z"},'
+        '"authenticationTag":"5ff7d58bd6d49bb9fe45a90ace972baea08607b2b5344733068139900ac0e07f"}';
+    final decoded = const ProtocolCodec().decode(raw);
+    expect(
+      const AuthenticatedEnvelopeSigner(
+        sessionNonce: 'server-nonce',
+      ).verify(decoded, credential),
+      isTrue,
+    );
+  });
 
   test('Dart authentication proof matches the Python protocol vector', () {
     const authenticator = WearableAuthenticator();

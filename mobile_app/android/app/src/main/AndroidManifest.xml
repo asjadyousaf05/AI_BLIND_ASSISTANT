@@ -7,6 +7,8 @@
          public internet or upload camera frames. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Requested only after a direct push-to-talk gesture. App-control speech
          uses Android's dedicated on-device recognizer; raw audio is not uploaded. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />

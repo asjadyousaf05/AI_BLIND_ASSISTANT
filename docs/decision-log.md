@@ -1,5 +1,657 @@
 # Decision Log
 
+## ADR-076: Recover local Vision AI listening and signal actual readiness
+
+Date: 2026-10-21. Status: Accepted for the owner's demo-reliability request.
+
+The owner reports misunderstood commands and missed commands during speech, and
+requests verified improvements for the 2026-10-22 demonstration. Keep the existing
+bundled English Vosk model, deterministic routing, local audio and foreground
+boundary. Do not introduce an unmeasured speech-engine switch before the demo.
+
+Native resume must acknowledge success or return an error. The kernel serializes
+recognition handling, shares concurrent starts/recovery and limits recovery to two
+attempts. Stop/background/disposal invalidate pending starts/recovery. A rejected
+speaker-echo wake and an empty callback restore capture without executing an
+action. Native grammar changes preserve pause state during spoken output. Use a
+1.0-second command trailing-silence allowance (previously 0.7 seconds).
+
+After wake acknowledgement or ordinary spoken command feedback, successful local
+command resume may request one 80 ms vibration and 100 ms tone, with 180 ms
+resource cleanup. Feedback is optional, foreground/session gated, independently
+attempted and generation-safe; hardware/media settings may suppress it. Do not cue
+on idle timeouts, during reader playback or Smart AI button mode. Keep ordinary
+commands paused during feedback; this does not add general interruption while
+speaking. Assistant Settings explains the cue and exposes Restart voice listening
+on failure without changing saved preferences.
+
+Reject explicit unknown-word markers and negated requests before semantic/fuzzy
+matching; apply observed ASR repairs at whole-word boundaries. Do not guess new
+accent corrections without evidence. The 673 Flutter/25 native cases and clean
+analysis verify software behavior; owner-spoken accuracy, noise, hardware cues and
+TalkBack remain physical acceptance. No error-free or assistant-parity claim.
+[Full evidence](VISION_AI_RELIABILITY_2026-10-21.md).
+
+## ADR-075: Keep the Smart AI circle visible before personal setup
+
+Date: 2026-10-21. Status: Accepted by the owner's cross-phone consistency request.
+
+The Pixel's installed 1.4.16 hash exactly matches the TECNO-delivered artifact.
+The visible difference is configuration-dependent presentation: only phones with
+saved Smart AI cloud keys rendered the circle; fresh phones rendered the older
+unpaired laptop/Gemini view. That fallback confused setup state with product UI.
+
+Use the existing circle view for a fresh/unconfigured phone with a labelled Set
+up Smart AI action and disabled question recording/submission until personal key
+entry and the existing recipient-specific consent are saved. Show accurate local
+setup guidance rather than claiming cloud audio is enabled. Foreground local
+commands, spoken guidance and the local cue test remain available without cloud
+setup. Do not initialize the cloud client/recorder before configuration, transfer
+keys from another phone, embed a key, perform provider probes or infer consent.
+
+Restore already saved personal Gemini/laptop modes without migration or provider
+switching; unconfigured users can explicitly choose Use Gemini or laptop assistant.
+Reentering setup and removing cloud keys keep the circle for fresh users. Preserve
+unsent drafts, existing language/capture/feedback/native behavior, Riverpod and
+central routes; this is a presentation/activation correction, not a new assistant
+provider. No Vision AI/kernel/native/backend/Pi/model/dependency change. Record
+verification/build/device evidence in SMART_AI_FRESH_PHONE_2026-10-21.md.
+
+## ADR-074: Spoken action progress and visible-screen local commands
+
+Date: 2026-10-21. Status: Accepted by the owner's explicit Vision AI request.
+
+Extend the existing offline Vision AI path to speak Raspberry Pi discovery and
+connection progress before waiting, then report actual controller outcomes.
+Distinguish not found, discovery failure, multiple devices, connection failure,
+and already connected. A successful connection does not imply detection started.
+Mobile Mode reports camera preparation followed by success only when active;
+permission denial, startup failure and busy states cannot report a false success.
+
+Reuse Riverpod, the central route observer, pure deterministic intent resolver,
+authorization registry and existing assistance/wearable controllers. The kernel
+owns progress TTS/echo protection and keeps the microphone paused until the action
+and result are complete. Suppress overlapping local commands during an action.
+Visible routes determine feature context, including settings/informational/Pi
+pages and restored pages after pop; stale screen disposal cannot clear it.
+Short feature verbs use screen context; go back always navigates a screen, with
+previous line reserved for reader movement. Apply context gates to manual controls
+as well as recognized controls. Add bounded polite navigation grammar, singular
+setting/about aliases and the branded Listen Vision AI wake phrase/echo guard.
+
+Smart AI foreground button mode accepts direct local commands at idle, after
+capture and on reply pause without another wake. Ordinary local speech still
+cannot invoke a legacy conversation or cloud request. Release AudioRecord during
+explicit capture, retain foreground/permission guards and restore the saved global
+hands-free preference on exit. A local command cancels a Smart AI reply and restores
+its locale before local feedback; releasing idle/paused Smart AI cannot stop newer
+Vision AI speech. No new recognizer, thread, cloud provider or camera upload.
+
+Update visible, spoken and semantic Smart AI guidance. Existing circle timing,
+languages, keys, consent, recording bounds, models, provider selection and Pi
+network protocol stay unchanged. Verification and real-phone acoustic limits are
+recorded in VISION_AI_COMMANDS_2026-10-21.md; software tests do not prove physical
+recognition or spoken output in noise.
+
+## ADR-073: Smart AI microphone-ready vibration and chime
+
+Date: 2026-10-21. Status: Accepted by the owner's explicit feedback request.
+
+The owner confirms hold-to-record is working but still feels no haptic and
+requests a short audible cue like an assistant's ready signal. The old Smart AI
+adapter only requested a 180 ms vibration through the existing plugin, whose
+installed Android implementation uses alarm audio attributes. No sound existed.
+That classification is verified in local source; it does not prove why the
+physical motor was silent on the owner's phone.
+
+Replace only Smart AI's readiness adapter with a private native method channel.
+After native recording successfully starts, request a 220 ms one-shot vibration
+classified as accessibility (SDK 33+, accessibility audio attributes on older
+Android). Use strong amplitude where supported and default otherwise. At the
+same point, generate a 160 ms prompt tone locally on the media stream at 65%
+generator gain. Preserve media volume/routing/DND; do not force the speaker or
+change global settings. No file/asset download, TTS utterance, API, new permission,
+package, background service or worker thread. Existing VIBRATE permission suffices.
+The cue is independent of obstacle-alert preferences and changes none of them.
+
+Attempt vibration and chime independently so one failure cannot suppress the
+other. Native feedback is bounded, releases resources after 300 ms, and rejects
+play while the Activity is not foreground. Cancel/submit/background/exit stop it;
+generations prevent old cleanup callbacks from stopping a replacement cue.
+Dart calls have a 750 ms bound. A hardware failure leaves recording usable with
+specific visible/accessibility fallback guidance instead of silently swallowing
+it. Muted media reports sound unavailable; accepted native requests still need
+physical verification of actual vibration/audibility.
+
+Update circle hints, visible and spoken help, and rename the local test action to
+Test listening vibration and sound. It neither records nor calls a provider.
+Keep existing hold timing, STT/LLM/TTS/language/exit policy and all Vision AI,
+recognizers/grammars/kernel/shared TTS/backend/Pi behavior unchanged. MainActivity
+only registers the isolated cue handler and forwards its lifecycle cleanup.
+Use existing Riverpod/audio domain boundary; widgets initialize no hardware.
+
+The owner requests an APK for later testing, so device installation/physical
+haptic/sound acceptance is deliberately pending. Record software checks/artifact
+hashes in SMART_AI_READY_CUE_2026-10-21.md; do not claim a hardware fix from tests.
+
+## ADR-072: Bilingual Smart AI circle and foreground local controls
+
+Date: 2026-10-20. Status: Accepted by explicit owner requests; physical follow-up active.
+
+The initial one-second hold/vibrate/release circle, local tap pause/resume and
+hold-to-interrupt are implemented. Preserve the exact original system prompt
+as the first system message and add the latest-turn language instruction. Keep
+named button controls, semantic tap/Enter/Space, bounded capture and cancellation.
+
+After 1.4.13 installation the owner reports that English speech is already
+transcribed as Urdu, vibration is missing, and goodbye was spoken without a
+button hold. They explicitly request keeping local Vision AI available alongside
+button-only Smart AI. This supersedes this ADR's initial recorded-only exit and
+screen-wide wake-pause interpretation; it authorizes only the narrow integration
+below, not a migration of Vision AI inference or cloud/background listening.
+
+Keep Auto speech-language detection, but disclose its short-question ambiguity.
+Offer accessible English/Urdu overrides that send ISO en/ur to the same Whisper
+request and preserve that language for its answer. No extra retry or provider
+call, no language promise based only on an LLM instruction. Choices are in-memory
+Smart AI session state. Existing offline reply voices restore en-US on exit.
+Use an explicit 180 ms default-amplitude pulse for recording acknowledgement,
+independent of the detection-alert vibration preference, without rewriting that
+preference. A Test listening vibration control needs no capture or provider.
+
+Local controls run only while the app is foreground/unlocked. Enable an isolated
+native Smart AI goodbye extension around the unchanged base Vision AI wake/app
+grammars; exact final branded goodbye emits a separate local event without a
+wake prefix. Reject incidental mentions, unknown tokens and speaker echo. The
+Smart AI controller cancels its turn, restores/releases audio, then asks for the
+existing Home route. Typed/recorded goodbye remain deterministic alternatives.
+
+Native ASR yields AudioRecord during button capture and resumes afterwards;
+pausing a decoder alone does not release the microphone. A narrow kernel button-
+mode guard selects app commands instead of free-form conversation and forbids
+unmatched local speech from starting the legacy assistant. Shared native handler
+and Dart recognition bridge gain the optional foreground capability; Vision AI
+base wake/command grammars/resolver/detection models/backend/Pi remain unchanged.
+Smart AI speech uses the existing shared echo guard/progress API. Foreground
+Smart AI temporarily enables local controls, restoring the saved global hands-
+free preference on exit; it never rewrites that setting. No parallel recognizer,
+cloud wake, unprompted cloud request, audio retention or new worker/dependency.
+
+Labels explain hold/listening/release/pause/resume. Spoken help, language choices,
+local-listener status and Back to Home remain available. Automatic recognition,
+actual haptics, wake/exit acoustics, TalkBack, noise and latency need physical
+acceptance beyond unit/build checks. See SMART_AI_CIRCLE_2026-10-20.md.
+
+## ADR-071: Explicit Groq-only Smart AI after client-access rejection
+
+Date: 2026-10-19. Status: Accepted by the owner's explicit provider choice.
+
+The observed AgentRouter model-list response is HTTP 401 with
+`unauthorized_client_error` / `unauthorized client detected`. The owner confirms
+an enabled token/model entitlement, so token invalidity is not established.
+The owner selected Groq for both speech and answers instead of waiting for
+client approval. No AgentRouter completion is sent by the agent to investigate.
+
+Keep Whisper large v3 and the original spoken-answer system prompt, add Groq
+`openai/gpt-oss-20b` at its fixed OpenAI-compatible chat endpoint, use
+`reasoning_effort: low`, `include_reasoning: false` and a 512-completion-token
+cap including hidden reasoning. Preserve the same bounded context, cancellation,
+deadlines, local controls and TTS. The only key needed for Groq mode is the
+personal Groq key; it may be reused from Keystore without exposing it in fields.
+Consent names the selected text recipient and resets when selection changes.
+
+Store the explicit provider alongside encrypted credentials. Missing legacy
+provider fields mean AgentRouter; unknown fields fail closed. Selecting Groq
+clears conversation history and makes no AgentRouter request. No automatic
+provider/model fallback, impersonation of another client or laptop proxy is
+introduced. Existing Vision AI/backend/Pi and audio ownership remain unchanged.
+The Groq application-stack read-only model list returns HTTP 200 and includes
+both requested Groq models; this alone is not spoken-answer acceptance.
+
+Primary sources: [Groq models](https://console.groq.com/docs/models),
+[reasoning controls](https://console.groq.com/docs/reasoning),
+[free-plan quotas](https://console.groq.com/docs/rate-limits). A
+[report in AgentRouter's tracker](https://github.com/agentrouter-org/docs/issues/37)
+matches the observed client-policy error; it is a user report, not a provider
+approval or a guarantee about all clients.
+
+20 October speech addendum: the owner confirms Urdu transcription and Urdu
+answers in Groq mode, but only English fragments are pronounced. Google's Urdu
+(Pakistan) voice pack is already installed on the target phone. Add an isolated
+Smart AI reply-speech interface/adapter around the existing speech owner. Detect
+Urdu script, select an installed offline Urdu voice (prefer ur-PK, allow ur-IN),
+select offline en-US for English replies and restore en-US after completion,
+failure or cancellation. Never substitute a network voice or change Vision AI
+recognizer/kernel/reader speech implementations. Serialize voice changes so
+late selection cannot survive screen exit; the existing coordinator restores
+English before releasing the microphone to local controls. Missing voice data
+gives an actionable error while preserving the answer. Add Read last answer
+aloud to replay locally without transcription, provider charges or tool routing.
+This covers Urdu script and English; Roman Urdu language detection and arbitrary
+multilingual speech are outside this correction.
+
+## ADR-070: Isolate owner-requested Smart AI cloud speech
+
+Date: 2026-10-19. Status: Accepted by the owner's explicit pipeline request.
+
+Add direct personal-key Smart AI capture → Groq `whisper-large-v3` → AgentRouter
+`deepseek-v4-flash` → existing phone-local TTS. The owner explicitly excludes
+Vision AI changes; its kernel, recognizer, grammars, shared assistant controller,
+backend, Mobile/Pi detection and OCR sources remain unchanged. A separate
+Riverpod controller owns the new turn and its own configuration/history.
+The existing Smart AI route selects the new view only after disclosed opt-in
+and separate Keystore credential entry. Removing keys restores prior mode.
+
+Reuse the existing native recorder's 16 kHz mono/64 kbps AAC/M4A and caps through
+an isolated Dart adapter/cache-file prefix. Groq documents M4A support; no audio
+conversion, new SDK, dependency, isolate or background worker is necessary.
+Async Dart HTTPS implements the providers' OpenAI-compatible wire protocol,
+using one reusable client. Preserve the owner's AgentRouter origin and model;
+append its standard `/v1/chat/completions` path. No host/model fallback, redirect,
+automatic retry or tool processing. Provider access is checked on a real user
+question, never by transmitting a recording on save. Actual key/model access
+is a physical/live acceptance gate, not inferred from synthetic tests.
+
+Use exactly the owner's system instruction:
+
+> You are a helpful, empathetic real-time assistant for a blind individual. Listen to their query and give highly concise, clear, and direct answers. Avoid lengthy lists, markdown symbols, or bullet points because your text output will be directly read aloud to them. Keep responses conversational and brief.
+
+Limit recording to 30 seconds/4 MB, each query/transcript to 4096 characters,
+history to six recent non-tool user/assistant messages (2048 characters each),
+provider response bodies to 128 KiB, returned text to 8192 characters and model
+generation to 220 tokens. Connection timeout is eight seconds, transcription
+20 seconds, reasoning 25 seconds and the whole post-capture network turn 45
+seconds. Generation guards reject stale replies; cancellation/background/exit
+stop work and local capture, with no automatic replay. Delete clips immediately
+after transcription/failure, before reasoning. Next capture clears only this
+feature's orphan cache prefix after a prior process death.
+
+The existing local audio coordinator methods release wake microphone ownership
+on this screen and restore its saved preference on exit without changing Vision
+AI implementation/preferences. Deterministic user controls bypass the LLM after
+transcription. Plain cloud output is never fed back to command routing. The
+phone speaks through the existing shared TTS owner, preserving interruption.
+Provider privacy/retention/charges and audio/text destinations are disclosed;
+local clip deletion does not imply cloud-provider deletion. This is personal
+owner-key operation, not an embedded shared production secret or duplex audio.
+
+Runtime repair addendum: the initial installed 1.4.8 accepted configuration but
+showed a microphone-start error. Version 1.4.9 resolves the private cache through
+`getSmartAiCacheDirectory` on the existing Android recorder handler, instead of
+assuming Dart's system temporary directory is within Android's permitted cache.
+Reacquire audio immediately before capture to cover permission/resume handover.
+This is a necessary Smart AI dependency; existing native recorder operations,
+Vision AI recognition and shared assistant controller remain unchanged. Synthetic
+tests/builds pass; actual repaired microphone capture still requires the phone.
+The owner authorizes personal-key persistence in encrypted phone storage and
+limits testing to one short AgentRouter request with no automatic retries.
+
+Provider follow-up: the phone later showed an AgentRouter timeout; the owner
+also reported a shorter-input error. HTTP 400 had incorrectly implied excessive
+input for every request rejection. Version 1.4.10 distinguishes request/settings,
+credit, size and gateway-timeout failures without exposing provider bodies.
+Set `thinking: {type: disabled}` using DeepSeek's documented non-thinking mode
+for brief speech; preserve the requested origin/model, exact prompt, 220-token
+cap and deadlines. This is verified as an outgoing contract, not as evidence
+that AgentRouter honors the extension. No model/host fallback or retry is added.
+[DeepSeek's primary guide](https://api-docs.deepseek.com/guides/thinking_mode/)
+documents default thinking and its explicit switch; AgentRouter's own
+[guide](https://github.com/agentrouter-org/docs/blob/main/qwencode.md) confirms
+the `/v1` base URL. One read-only authenticated model-list request returned
+HTTP 401. No agent-triggered completion was sent; owner token/account/model
+access must be resolved before another credit-consuming acceptance attempt.
+
+## ADR-069: One phone hotspot and optional personal Gemini conversation
+
+Date: 2026-10-19. Status: Accepted within the owner's 18/19 October request.
+
+Both laptop and Pi join the owner's Android Personal Hotspot as clients. The
+phone uses its local tethering interface for authenticated Pi/WebSocket and
+laptop/HTTP connections; concurrent station Wi-Fi is unnecessary. Addresses
+remain DHCP-assigned. Restore saved laptop endpoints, remove the misleading
+static university-IP/Wi-Fi Direct preset, and require the current address after
+a change. Pi discovery/manual-address and device-bound trust remain unchanged.
+
+Provide optional direct Gemini conversation with a personal, user-entered key,
+disclosure and explicit consent, separately encrypted through the existing
+Android Keystore channel. This owner-requested mode supersedes backend-only
+key storage only for the personal key. Use Google's fixed HTTPS Interactions
+endpoint, a header key, `store:false`, bounded text/history/response/time, no
+redirects or automatic retries, and plain text responses without tool parsing.
+Default to `gemini-3.1-flash-lite`, editable for provider availability. Quotas,
+internet and free-tier data use are disclosed. Shared production keys still
+belong behind a server proxy; no shared key is packaged in Android.
+
+Direct mode never checks/depends on laptop pairing, never uploads audio, and
+uses phone-local speech even if a laptop credential remains saved. Background
+invalidates/cancels pending cloud requests. Provider changes clear conversation
+memory to prevent history crossing modes; direct history controls do not touch
+the laptop. Removing the key restores the existing laptop/Ollama mode. There
+is no silent provider fallback or claim of offline Gemini. Core assistance,
+Pi inference/audio routing, Riverpod and centralized named routes remain.
+
+A physical audible-test follow-up exposed an overly short normal TTS completion
+budget. Normal speech now allows 180 ms/character, bounded to 5–120 seconds;
+reader sentences retain their existing 3–30 second rule. Stop/replacement still
+cancels immediately. Successful eight-second speech and missing-completion
+failure are regression-tested. This also avoids prematurely truncating longer
+assistant answers while retaining a finite failure deadline.
+
+## ADR-069 performance addendum: Measure the Pi 3 before tuning
+
+Date: 2026-10-19. Owner confirms real detection audio but reports slow detection.
+The Pi 3B runs at approximately 600 MHz under current `0x50005` power throttling
+while its requested clock is 1.2 GHz. No software clock override or undervoltage
+suppression is permitted. The available 5 V/2 A adapter may be tested, but the
+recommended Pi 3 supply is 5 V/2.5 A; accept power only from under-load measurements.
+
+The unchanged, hash-verified model synthetic benchmark averages approximately
+922/634/575/515 ms at 1/2/3/4 NCNN threads in the throttled state. Select four
+threads, camera 320×240 at eight FPS, and frame stride one for the Pi 3 profile.
+The 4:3 image still letterboxes into the unchanged 320×320 tensor. Camera ISP
+scaling avoids redundant 640×480 RGB copying/nearest subsampling; the one-slot
+queue already discards stale frames, so do not additionally skip its newest
+result. Confidence, stability, speech cooldown/rate limits and model remain.
+
+Keep aggregate processed/dropped-frame counts, inference duration and frame age
+as local diagnostics and one timing log each 30 processed frames. No frame
+bytes, labels or personal content enter diagnostics. The cross-stack tests
+confirmed v1 rejects extra health fields; retain its exact wire schema and put
+no new metrics on the connection. Cross-stack signed-message tests must pass.
+Current health booleans use only bits 0–3 (and bit 0 for under-voltage); sticky
+history bits 16–19 no longer masquerade as an active fault after power recovers.
+Five flag-vector cases cover current versus historical status.
+
+Eight real camera frames per profile measure mean inference 584.8→544.5 ms and
+mean capture 175.0→227.5 ms. Live samples after 30–810 processed frames measure
+520–556 ms inference and 583–616 ms frame age. The owner still rejects speed.
+They confirm a switch to 5 V/2 A power; current 0x50005/600 MHz persists under
+load, so power restoration is an unmet hardware dependency.
+
+These measurements do not establish model accuracy or guarantee sustained
+performance on insufficient power. Repeat camera timing after restoring power
+and record owner acceptance separately.
+
+## ADR-068 addendum: Owner-approved temporary laptop speech
+
+Date: 2026-10-16. Status: Accepted by the owner's explicit follow-up selection:
+“Use paired-laptop Whisper for Smart AI speech; disclose it clearly and delete
+clips after processing.”
+
+Retain the existing paired Smart AI Speak-button path to local laptop Whisper.
+Show its destination/deletion disclosure before Speak and explain that hands-free
+remains on the phone. Temporary audio is restricted to the paired private-LAN
+laptop and deleted on both devices after processing/failure; no audio retention,
+logging, Gemini audio, cloud speech or background capture is authorized.
+
+This supersedes ADR-043 only for paired manual Smart AI speech, resolves the
+scope conflict in ISSUE-075, and leaves physical deletion/voice acceptance open.
+No automatic hands-free audio upload, new service, pairing flow, UI redesign or
+unrelated feature is added. Specification, architecture and privacy wording are
+updated to describe this narrow exception.
+
+## ADR-068: Accuracy-first local Smart AI transcription and truthful recovery
+
+Date: 2026-10-16. Status: Accepted within the owner's recognition repair request.
+
+The owner reports an unrelated transcript for a Quaid-i-Azam University question.
+The existing base laptop model reproduced a wrong name in synthetic Indian-English
+speech; cached medium corrected that rendering. Select medium as the default;
+smaller models remain configurable for resource-constrained laptops. Load only
+prepared local files, with no runtime download/new provider. Increased resource
+use does not guarantee names, accents or noise accuracy.
+
+Honor configured language unless explicitly overridden; explicit `auto` enables
+detection without promising reliable short-clip language identification. Remove
+the assistant-topic initial prompt, disable temperature fallback and previous-
+output conditioning. Reject the whole utterance when a nonempty segment falls
+below the decoder's default log-probability threshold or exceeds its default
+compression threshold. Never drop unclear words and execute the remaining
+command: missing words might negate it. Do not autocorrect names or use an LLM
+to rewrite commands.
+
+Retain capture/DI/routing structure. Stop shared output before manual capture,
+cancel recording on background/disposal, and delete the clip after submission.
+Audio 422 offers repeat/type recovery; 413 reports the recording limit. Only
+Vosk CONVERSATION delays become 8 s initial silence/1.6 s trailing silence/30 s
+utterance allowance; app/wake/Scanner settings stay unchanged. Physical timing
+and acoustic acceptance remain open. Hands-free remains independent Vosk.
+
+The paired manual branch already present initially conflicted with ADR-043;
+the owner's subsequent explicit approval is recorded in the addendum above.
+No cloud audio, UI redesign, inference, Pi, pairing or unrelated feature change
+is made. Evidence:
+SMART_AI_SPEECH_VERIFICATION_2026-10-16.md.
+
+## ADR-067 addendum: Owner-controlled rescan framing
+
+Date: 2026-10-15. Status: Accepted under the owner's rescan-positioning request.
+
+“Scan again” and “restart scanner” now use the same reset/framing path as the
+Scan Another Page control. Stop existing reading, clear the old page and return
+to camera preview/framing guidance; leave capture to a later explicit “scan
+document” or Scan button with no countdown. This supersedes ADR-066's immediate
+rescan capture behavior. Keep duplicate-capture, camera and temporary-cleanup
+guards, local recognition, reader echo protection and existing service ownership.
+
+## ADR-067: Bounded reader interruption during document speech
+
+Date: 2026-10-15. Status: Accepted under the owner's explicit reader-command request.
+
+Continuous document speech may prevent Vosk's silence-based final result.
+During foreground reader playback, a stable multiword partial can propose a
+reversible reader control. Dart must reject spoken-text echo, require a strong
+registered reader intent and current context/session, then atomically claim a
+short-lived native candidate before routing through the existing executor.
+Other partials never execute navigation, capture, settings or backend tools.
+Existing hardware AEC is enabled before capture; text matching and a bounded
+recent-sentence tail supplement it without claiming speaker identification.
+Reader playback opens contextual commands when hands-free is already enabled;
+explicit goodbye remains effective until wake or a new reader entry.
+No audio recording/upload, new recognizer owner or new speech engine is added.
+Physical loudspeaker overlap, accents/noise and unsupported AEC still require
+real-device testing. TTS text, partials and credentials must remain unlogged.
+
+## ADR-066: Fresh Scanner Captures and Explicit Voice Session Exits
+
+Date: 2026-10-15. Status: Accepted for the owner's three reported usability issues.
+
+“Restart scanner” and explicit rescan phrases resolve to RescanDocument in the
+native scanner grammar and Dart resolver. Voice rescan uses the existing capture
+workflow, which stops old reading, initializes the camera when needed, replaces
+the page and removes its temporary photo. A command-result utterance must not
+cancel the new reader speech. The touch Scan Another Document action still
+returns to framing; Restart Reading still means the first reading unit.
+
+Session exit requires a complete explicit phrase after bounded normalization
+and polite-prefix stripping. Keep “goodbye”, “good bye”, “stop listening”,
+“end voice session”, and explicit assistant/Smart AI exits. Remove bare “bye”,
+“by”, “dismiss” and “sleep”; no substring or fuzzy dismissal. Native focused
+grammars and backend deterministic routing agree. This supersedes bare-bye
+behavior in ADR-043/044; explicit Smart AI exit still returns to the offline
+command session, while an offline goodbye restores wake-only listening.
+
+On opening Smart AI, check only the explicitly saved laptop endpoint. Await
+credential loading, share overlapping checks, bound the preflight to eight
+seconds, and ignore results after pairing changes/disposal. Separate backend
+reachability from local voice session state so unavailable reasoning cannot
+disable app controls. Retry checks connectivity without resending a question;
+returning from pairing checks the new saved endpoint. A health response proves
+reachability/version, not valid authentication, provider readiness or an answer.
+Opening a Scanner draft sends no document text and never bypasses pairing.
+
+Architecture, Riverpod, named routes, permissions and local image/audio
+boundaries are retained. Camera platform interface is promoted from a cached
+transitive dependency to a direct test dependency for synthetic capture tests.
+The owner subsequently selected release-mode installation on the emulator only.
+Physical voice, OCR, TalkBack and wearable acceptance remain separate checks.
+
+## ADR-065: Reliable Offline Wearable Sessions and Explicit Audio Checks
+
+Date: 2026-10-09. Status: Accepted for the owner's Pi hotspot/phone-output request.
+
+Context: real Flutter/Python tests reproduced heartbeat sequence errors,
+offline clock mismatch, and an intermittent timestamp HMAC failure. Python and
+Dart also render small/exponential numbers differently. Cancellation tests
+reproduced delayed speech after Stop and duplicate microphone resume. Settings
+failure and Pi output handover needed consistent results.
+
+Decision: stamp signed traffic, including heartbeats/disconnects, through one
+repository sequence and a monotonic clock seeded from the Pi hello. Keep exact
+received timestamp text when verifying/signing; use Dart-compatible canonical
+JSON number rendering on the Pi. Keep protocol v1 fields, HMAC/nonce/replay
+checks and the two-minute window. Existing enrollment remains private-LAN TOFU;
+no system clock changes, time service, public endpoint or authentication bypass
+is introduced. Deploy the updated app and Pi service together.
+
+Expose an owner-initiated Test Phone Audio action through the injected existing
+voice owner. It is available before connection and does not imply that a human
+heard the output. Invalidate stopped speech generations before asynchronous
+work; stop wearable speech on pause/stop/background/disconnect/mute. Stop Pi
+fallback speech before sending a phone alert. A failed settings sync must not
+start detection or report success; persist Pi settings before updating live
+state. Keep Disconnect available during pending start/settings work.
+
+Restrict mDNS to the service's selected private interface, clean partial
+registration resources, and use a non-blocking NetworkManager service restart.
+No passwords, raw frames, new cloud service, route or state framework is added.
+
+Evidence: HOTSPOT_VERIFICATION_2026-10-09.md. Real handset hotspot routing,
+physical camera/NCNN operation and speaker acceptance remain open.
+
+## ADR-064: Enforce Existing Assistant Trust and Truthful Action Results
+
+Date: 2026-10-09. Status: Accepted within the owner-requested whole-project audit.
+
+Context: regression tests reproduced invalid-code/direct laptop token issuance,
+server tools executing before confirmation, unsafe endpoint fallback, invented
+audio duration and battery values, and no-op/unchecked control success.
+
+Decision: restore the specification's one-time laptop pairing requirement;
+bind pending backend proposals to the authenticated user/request/tool and execute
+only after Confirm, using stored arguments. Cancel consumes the proposal. Keep
+one proposal per user in memory and invalidate it on a new query. The existing
+phone Confirm/Cancel and tool-result protocol carry the acknowledgement, so no
+new authentication or route system is needed. Network-loss feedback must express
+uncertainty, not report successful deletion. Pi's separately approved exclusive
+first-enrollment protocol is unchanged.
+
+Use only the selected private laptop endpoint, validate/connect to the resolved
+private IP, disable redirects/proxies, bound complete requests/responses, and do
+not retry mutations. Inject Android battery readings through a domain service;
+report unavailable hardware and failed TTS/torch operations truthfully. Remove
+embedded SSH-helper credentials without rewriting Git history.
+
+Consequences: blank/direct laptop pairing no longer works; owner must enter the
+short-lived code. A backend restart or superseding query requires a fresh
+confirmation proposal. Physical and third-party-tool verification remain open.
+Evidence: PROJECT_AUDIT_2026-10-09.md and regression tests.
+
+## ADR-063: Use One Clear Name per Accessible Action
+
+- Date: 2026-10-03
+- Status: Accepted; automated evidence verified, physical TalkBack gate open
+- Context: A blind user's feedback emphasized proper button labels. Review
+  found custom semantic names repeated alongside visible captions, vague
+  destinations, and a slider whose name and adjustable value were separate.
+- Decision: Name controls by action and context. Custom button/choice wrappers
+  expose one label, their role/state, and a semantic tap handler while excluding
+  decorative descendants. Selection and disabled state use semantic flags.
+  Native icon-button tooltips, editable fields, switches and slider adjustment
+  actions remain intact. Merge slider name and value into one adjustable node.
+  Dynamic reader controls announce Start, Pause or Resume according to state.
+- Consequences: Keep visible captions concise where space is limited, pair
+  them with clear spoken names, and test actual semantic activation rather than
+  label presence alone. Physical speech/focus review with a blind user remains
+  required; automated semantics do not establish TalkBack usability.
+- Related requirements: FR-012, NFR-ACC-001/002, NFR-RESP-001, NFR-MAINT-002.
+
+## ADR-062: Require Review Before Scanner Text Reaches the Assistant
+
+- Date: 2026-10-03
+- Status: Accepted
+- Context: The Scanner's Ask AI button previously opened the assistant without
+  the recognized document. Passing text straight to the paired backend would
+  be surprising for a potentially sensitive document.
+- Decision: Ask AI shows a disclosure and, after confirmation, opens an
+  editable in-memory assistant draft. Navigation does not submit text. The
+  owner must tap Send; only then may the paired laptop and optional Gemini
+  reason over typed document text. No image is handed off. The route restores
+  Scanner voice context when the user returns.
+- Consequences: The feature works without document persistence. A paired
+  backend is required to answer a sent question; offline Scanner reading and
+  deterministic controls remain independent. Physical acceptance is open.
+- Related requirements: FR-019, NFR-SEC-001, NFR-SEC-003, NFR-ACC-001.
+
+
+## ADR-061: Cancelable, Identity-based Wearable Connection
+
+- Date: 2026-09-28
+- Status: Accepted; software verified, hardware acceptance open
+- Context: The owner requested a seamless, professional Pi connection and
+  phone audio. Review found repeated enrollment on trusted selections,
+  error/status ordering that skipped reconnect, and asynchronous work that
+  could reopen/start a connection after cancellation.
+- Decision: Guard the full Connect & Start flow; keep credentials tied to Pi
+  identity; restore saved credentials on manual re-addressing, then require
+  normal authentication. Rediscover each retry, bound DNS lookup, reconnect
+  once per bounded run, and require explicit recovery after exhaustion or
+  authentication rejection. Cancel search/retries/commands on disconnect,
+  background, and dispose. Ignore late/wrong-device phone speech events.
+  Put Connect first and manual options in a native expansion control.
+  Serialize bounded Android NSD resolution and process callbacks on main.
+- Consequences: No hotspot IP is assumed permanent. Cancellation cannot undo
+  a Pi command already applied; disconnect leaves active assistance running
+  locally. Pi physical speech/camera/hotspot behavior is still unverified.
+  Android documentation specifies resolver callbacks can arrive on an
+  internal thread; main-thread/session guards are our implementation choice.
+- Sources: [Android ResolveListener](https://developer.android.com/reference/android/net/nsd/NsdManager.ResolveListener),
+  [Android NsdManager](https://developer.android.com/reference/android/net/nsd/NsdManager).
+- Related requirements: FR-008, FR-010, FR-011, FR-012, FR-017,
+  NFR-OFFLINE-001.
+
+## ADR-060: Connected Phone Owns Wearable Speech
+
+- Date: 2026-09-25
+- Status: Accepted; physical acceptance open
+- Context: The owner clarified that the Pi should detect objects and the
+  connected mobile phone should produce the spoken output.
+- Decision: Keep Pi camera/inference local and send compact authenticated
+  detections. Only bounded, stable priority alerts trigger speech on the
+  connected phone, using its single TTS owner. The Pi does not speak an alert
+  targeted to the phone. Keep existing Pi-local speech after disconnection so
+  an active wearable is not silent when the phone link fails. Surface phone TTS
+  failure/timeout in the wearable UI.
+- Consequences: No camera frames or audio recordings cross the connection.
+  Speaking every frame is deliberately avoided. Real speaker output and
+  fallback require physical acceptance on the owner phone and Pi.
+- Related requirements: FR-010, FR-011, FR-017, NFR-OFFLINE-001.
+
+
+## ADR-059: Owner Phone Hotspot as Primary Pi Network
+
+- Date: 2026-09-25
+- Status: Accepted for implementation; physical acceptance open
+- Context: The owner wants the Pi to follow the phone without relying on
+  university/public Wi-Fi or a manually maintained IP address. Android
+  tethering still uses DHCP for client IPv4 addresses, so a hotspot alone
+  cannot guarantee a fixed Pi address.
+- Decision: Use the owner-configured Android Personal Hotspot as the primary
+  private LAN. The Pi joins it through Raspberry Pi OS NetworkManager. Keep
+  `AIBA_BIND_HOST=auto` and mDNS service advertisement; Android NSD with a
+  discovery-scoped multicast lock is the primary address lookup. Keep `.local`
+  and current private address as manual fallbacks. Install a NetworkManager
+  Wi-Fi-up hook to revive the bounded Pi service after hotspot reconnection.
+  Preserve exclusive enrollment, Keystore/HMAC protocol, and local-only data.
+- Consequences: The app does not control the system hotspot or handle its
+  password. Hotspot DHCP addresses may change; physical TECNO BG6/Pi testing
+  must verify NSD, manual fallback, restart, and audio. First enrollment still
+  requires an owner-controlled hotspot and intended-device verification.
+- Evidence: `docs/PHONE_HOTSPOT.md`; Android debug APK; 320 Flutter tests and
+  16 Pi tests. Physical acceptance is open.
+- Related requirements: FR-010, FR-011, NFR-OFFLINE-001, NFR-SEC-004.
+
+
 ## ADR-001: Native Flutter UI Instead of WebView
 
 - Status: Accepted
@@ -775,4 +1427,3 @@
   `raspberry_pi/systemd/ai-blind-assistant-tunnel.service`,
   `raspberry_pi/config/wearable.env.example`,
   `mobile_app/lib/features/raspberry_pi/presentation/raspberry_pi_screen.dart`
-

@@ -1,0 +1,122 @@
+[
+  {
+    "label": "Document Scanner",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Go back from Document Scanner",
+    "bounds": [
+      8,
+      56,
+      104,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Document Scanner",
+    "bounds": [
+      172,
+      78,
+      548,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Status: Scanner: Ready to Scan\nSCANNER: READY TO SCAN",
+    "bounds": [
+      48,
+      208,
+      672,
+      264
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Live camera document scanner viewfinder. Point at document to align.",
+    "bounds": [
+      48,
+      288,
+      672,
+      848
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Turn on flashlight",
+    "bounds": [
+      76,
+      316,
+      278,
+      384
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Document aligned.",
+    "bounds": [
+      268,
+      761,
+      504,
+      801
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Scan document and read aloud, Captures a photo and recognizes text on this phone.",
+    "bounds": [
+      48,
+      880,
+      672,
+      1040
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Turn flashlight on",
+    "bounds": [
+      48,
+      1064,
+      672,
+      1176
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Enable voice controls",
+    "bounds": [
+      48,
+      1192,
+      672,
+      1304
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Voice commands: Say \"Scan Document\", \"Flashlight on\", or \"Read document\"",
+    "bounds": [
+      48,
+      1320,
+      672,
+      1392
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Document Scanner Privacy\nDocument Scanner Privacy\nPhotos are processed on this phone only using local ML Kit AI. The temporary photo is deleted after recognition.\nFor best results, hold the phone parallel and steady ~10-12 inches over a flat document.\nVoice accessible: you can say \"Scan Document\" or \"Read Document\" anytime.",
+    "bounds": [
+      48,
+      1424,
+      672,
+      1552
+    ],
+    "clickable": false
+  }
+]

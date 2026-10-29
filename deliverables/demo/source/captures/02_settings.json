@@ -1,0 +1,172 @@
+[
+  {
+    "label": "Settings",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Go back from Settings",
+    "bounds": [
+      8,
+      56,
+      104,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Settings",
+    "bounds": [
+      278,
+      78,
+      442,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Settings",
+    "bounds": [
+      48,
+      208,
+      672,
+      272
+    ],
+    "clickable": false
+  },
+  {
+    "label": "All settings are saved locally on this device.",
+    "bounds": [
+      48,
+      288,
+      672,
+      328
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Feedback Mode",
+    "bounds": [
+      48,
+      376,
+      362,
+      428
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Choose alert channels for detected obstacles.",
+    "bounds": [
+      48,
+      436,
+      619,
+      476
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Use audio alerts",
+    "bounds": [
+      48,
+      500,
+      672,
+      672
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Use vibration alerts",
+    "bounds": [
+      48,
+      696,
+      672,
+      868
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Use audio and vibration alerts",
+    "bounds": [
+      48,
+      892,
+      672,
+      1068
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Detection Sensitivity",
+    "bounds": [
+      48,
+      1116,
+      456,
+      1168
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Choose the detection threshold preset.",
+    "bounds": [
+      48,
+      1176,
+      530,
+      1216
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Set low detection sensitivity",
+    "bounds": [
+      48,
+      1240,
+      672,
+      1392
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Home\nTab 1 of 4",
+    "bounds": [
+      0,
+      1392,
+      180,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Modes\nTab 2 of 4",
+    "bounds": [
+      180,
+      1392,
+      360,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Wearable\nTab 3 of 4",
+    "bounds": [
+      360,
+      1392,
+      540,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Settings\nTab 4 of 4",
+    "bounds": [
+      540,
+      1392,
+      720,
+      1552
+    ],
+    "clickable": true
+  }
+]

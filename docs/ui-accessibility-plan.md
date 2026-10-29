@@ -1,6 +1,54 @@
 # UI Accessibility Plan
 
-Last reviewed: 2026-08-14
+## Module 65 wearable audio and cancellation
+
+Wearable adds a native labeled Test Phone Audio button with the accessible name
+“Play a test message through the phone speaker.” It works before pairing and
+reports platform failures with recovery text. An explicit visible note explains
+when object audio alerts are off. Disconnect remains operable during detection
+startup/settings work. Widget tests activate these controls through their
+accessible names; physical TalkBack/2× text acceptance remains open.
+
+Last reviewed: 2026-10-03
+
+## Module 63: Control Labeling Convention
+
+Name each action once with familiar words. Prefer a verb and context when
+the visible caption is short: “Read first line,” “Use audio alerts,” and
+“Go back from Settings.” The screen reader supplies the button role and
+selected/disabled/on/off state; do not repeat these in the label. Use a hint
+only to explain a consequence. Decorative icons and repeated visual captions
+do not become additional focus stops.
+
+| Control | Accessible name or state behavior |
+|---|---|
+| Startup | Continue to home |
+| Back | Go back from the current screen title |
+| Mode choice | Select Mobile Mode / Select Raspberry Pi wearable mode; selected flag |
+| Feedback choice | Use audio / vibration / audio and vibration alerts; selected flag |
+| Sensitivity | Set low / medium / high detection sensitivity; selected flag |
+| Cooldown slider | Announcement cooldown; value in seconds; increase/decrease actions |
+| Scanner transport | Start Reading / Pause Reading / Resume Reading according to playback |
+| Reader navigation | Read previous/next/first/last document line; Choose reading line |
+| Reader tools | Repeat current line; Spell out current line letter by letter; Copy full document text to clipboard |
+| Reading speed | Set study / normal / fast reading speed; selected flag |
+| Camera | Scan document and read aloud; Turn flashlight on/off; Switch camera |
+| Vision AI | Speak to Vision AI / Send spoken question or command / Stop assistant speech |
+| Typed Send | Native tooltip: Send typed question or command |
+| Ask AI | Review scanned document with Vision AI |
+| Help | Previous help step / Next help step / Finish the user guide and return home |
+| Navigation | Home, Modes, Wearable, Settings; native destination selection state |
+
+Native editable fields use one InputDecoration label. Switches retain native
+toggled semantics. Slider name/value/actions are merged into one node.
+Custom button wrappers explicitly retain semantic activation when suppressing
+duplicate descendant captions.
+
+Module 63 verifies exact labels, selection/disabled flags, semantic taps,
+navigation, slider units/adjustment actions, and changing reader transport
+names. The full suite passes 351 tests with one environment skip; physical
+TalkBack pronunciation, focus order and usefulness require the blind user's
+review. No Android device was attached during this pass.
 
 ## Accessibility Goals
 
@@ -84,8 +132,9 @@ Current automated coverage:
 - The live assistant has dedicated 393 x 852 at 2.0 text-scale coverage,
   meaningful push-to-talk state, typed input, and separately labelled
   Confirm/Cancel actions without a timeout.
-- Current full suite: 202 tests passed with one environment-gated Pi test
-  skipped; analyzer clean on 2026-08-14.
+- Current full suite: 351 passed and one environment-gated Pi test skipped on
+  2026-10-03. Changed-file analysis is clean; two existing assistant-controller
+  unused imports remain in full analysis.
 
 Physical acceptance must verify TalkBack microphone permission return,
 foreground “Hey Vision AI” status, manual hold/release, listening/processing

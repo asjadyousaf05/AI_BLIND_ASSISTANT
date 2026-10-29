@@ -1,0 +1,162 @@
+[
+  {
+    "label": "Mobile Assistance",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Go back from Mobile Assistance",
+    "bounds": [
+      8,
+      56,
+      104,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Mobile Assistance",
+    "bounds": [
+      178,
+      78,
+      542,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Mobile camera assistance icon",
+    "bounds": [
+      48,
+      212,
+      192,
+      356
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Mobile Mode",
+    "bounds": [
+      224,
+      208,
+      553,
+      272
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Tap Start Assistance to begin detecting obstacles.",
+    "bounds": [
+      224,
+      280,
+      672,
+      360
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Status: Inactive\nINACTIVE",
+    "bounds": [
+      48,
+      408,
+      672,
+      464
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Status: Idle\nSTATUS\nIdle",
+    "bounds": [
+      48,
+      504,
+      672,
+      676
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Detection: Not running\nDETECTION\nNot running",
+    "bounds": [
+      48,
+      700,
+      672,
+      872
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Alerts: Not running\nALERTS\nNot running",
+    "bounds": [
+      48,
+      896,
+      672,
+      1068
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Feedback: Inactive\nFEEDBACK\nInactive",
+    "bounds": [
+      48,
+      1092,
+      672,
+      1264
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Start camera and object detection",
+    "bounds": [
+      48,
+      1304,
+      672,
+      1392
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Home\nTab 1 of 4",
+    "bounds": [
+      0,
+      1392,
+      180,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Modes\nTab 2 of 4",
+    "bounds": [
+      180,
+      1392,
+      360,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Wearable\nTab 3 of 4",
+    "bounds": [
+      360,
+      1392,
+      540,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Settings\nTab 4 of 4",
+    "bounds": [
+      540,
+      1392,
+      720,
+      1552
+    ],
+    "clickable": true
+  }
+]

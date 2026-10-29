@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/assistant_session_controller.dart';
+import '../../../app/smart_ai_cloud_controller.dart';
+import 'smart_ai_cloud_screen.dart';
 import '../../../app/router/route_paths.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_dimensions.dart';
@@ -13,6 +17,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/widgets/app_screen_scaffold.dart';
 import '../../../core/widgets/visual_components.dart';
 import '../../../domain/enums/assistant_session_state.dart';
+import '../../../domain/enums/assistant_backend_status.dart';
 import '../../../domain/enums/voice_feature_context.dart';
 
 /// The primary Personalized Local AI Assistant screen.
@@ -25,7 +30,10 @@ import '../../../domain/enums/voice_feature_context.dart';
 /// - Text input alternative
 /// - Stop speaking / Repeat last / Cancel controls
 class AssistantScreen extends ConsumerStatefulWidget {
-  const AssistantScreen({super.key});
+  const AssistantScreen({super.key, this.initialDraft});
+
+  /// In-memory text prepared by another screen. The user reviews it before Send.
+  final String? initialDraft;
 
   @override
   ConsumerState<AssistantScreen> createState() => _AssistantScreenState();
@@ -36,16 +44,67 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _showTextInput = false;
   bool _holdActive = false;
+  bool _legacyLoaded = false;
+  bool _legacyMode = false;
   late final VisionVoiceKernelV3 _voiceKernel;
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialDraft != null && widget.initialDraft!.isNotEmpty) {
+      _textController.text = widget.initialDraft!;
+      _showTextInput = true;
+    }
     _voiceKernel = ref.read(visionVoiceKernelProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _voiceKernel.setFeatureContext(VoiceFeatureContext.smartAi);
+      unawaited(_initializeMode());
     });
+  }
+
+  Future<void> _initializeMode() async {
+    await ref.read(smartAiCloudControllerProvider.notifier).loadConfiguration();
+    if (!mounted ||
+        ref.read(smartAiCloudControllerProvider).configuration != null) {
+      return;
+    }
+    final legacy = ref.read(assistantSessionControllerProvider.notifier);
+    // Preserve existing personal Gemini/laptop choices. A fresh installation
+    // gets the circle with setup guidance instead of an unrelated fallback UI.
+    await Future.wait([
+      legacy.loadStoredCredential(),
+      legacy.loadGeminiConfiguration(),
+    ]).timeout(const Duration(seconds: 3), onTimeout: () => <void>[]);
+    if (!mounted ||
+        ref.read(smartAiCloudControllerProvider).configuration != null) {
+      return;
+    }
+    final saved = ref.read(assistantSessionControllerProvider);
+    setState(() {
+      _legacyLoaded = true;
+      _legacyMode = _legacyMode || saved.isPaired || saved.usesDirectGemini;
+    });
+    if (_legacyMode) {
+      _voiceKernel.setFeatureContext(VoiceFeatureContext.smartAi);
+      await legacy.connectBackend();
+    }
+  }
+
+  Future<void> _openOtherAssistant() async {
+    await ref.read(smartAiCloudControllerProvider.notifier).deactivate();
+    if (!mounted) return;
+    setState(() => _legacyMode = true);
+    _voiceKernel.setFeatureContext(VoiceFeatureContext.smartAi);
+    await ref
+        .read(assistantSessionControllerProvider.notifier)
+        .connectBackend();
+  }
+
+  Future<void> _openConnectionSettings() async {
+    await Navigator.of(context).pushNamed(RoutePaths.assistantConnection);
+    if (mounted) {
+      unawaited(_initializeMode());
+    }
   }
 
   @override
@@ -60,6 +119,23 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cloud = ref.watch(smartAiCloudControllerProvider);
+    if (!cloud.loaded || (cloud.configuration == null && !_legacyLoaded)) {
+      return const AppScreenScaffold(
+        title: 'Smart AI Assistant',
+        children: [Text('Loading Smart AI settings…')],
+      );
+    }
+    if (cloud.configuration != null || !_legacyMode) {
+      return SmartAiCloudScreen(
+        openConnectionSettings: _openConnectionSettings,
+        initialDraft: widget.initialDraft,
+        onUseOtherAssistant: () => unawaited(_openOtherAssistant()),
+        onReturnHome: () => Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil(RoutePaths.home, (_) => false),
+      );
+    }
     final controllerState = ref.watch(assistantSessionControllerProvider);
     final voiceState = ref.watch(visionVoiceKernelProvider);
     final controller = ref.read(assistantSessionControllerProvider.notifier);
@@ -95,18 +171,19 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         children: [
           IconButton(
             key: AppKeys.assistantSettingsButton,
-            tooltip: 'Vision AI Settings',
+            tooltip: 'Open Vision AI settings',
             onPressed: () =>
                 Navigator.of(context).pushNamed(RoutePaths.assistantSettings),
             icon: const Icon(AppIcons.settings),
           ),
           IconButton(
             key: AppKeys.assistantConnectionButton,
-            tooltip: controllerState.isPaired
-                ? 'Connected to ${controllerState.credential?.displayName ?? 'laptop'}'
-                : 'Pair with Laptop',
-            onPressed: () =>
-                Navigator.of(context).pushNamed(RoutePaths.assistantConnection),
+            tooltip: controllerState.usesDirectGemini
+                ? 'Open Gemini and laptop connection settings'
+                : controllerState.isPaired
+                ? 'Open laptop assistant connection settings'
+                : 'Connect to the laptop assistant',
+            onPressed: _openConnectionSettings,
             icon: Icon(
               controllerState.isPaired ? AppIcons.link : AppIcons.connection,
               color: controllerState.isPaired
@@ -115,7 +192,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
             ),
           ),
           IconButton(
-            tooltip: 'Exit to App Controller (Say "Bye")',
+            tooltip: 'Close Vision AI assistant',
             onPressed: () => Navigator.of(context).pop(),
             icon: const Icon(Icons.close),
           ),
@@ -150,15 +227,55 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         const SizedBox(height: AppSpacing.space4),
 
         // Optional general-conversation backend banner
-        if (!controllerState.isPaired)
-          _NotPairedBanner(
-            onPair: () =>
-                Navigator.of(context).pushNamed(RoutePaths.assistantConnection),
+        if (!controllerState.isPaired && !controllerState.usesDirectGemini)
+          _NotPairedBanner(onPair: _openConnectionSettings),
+
+        if (controllerState.usesDirectGemini)
+          Semantics(
+            liveRegion: true,
+            child: const Card(
+              child: ListTile(
+                leading: Icon(Icons.cloud_outlined),
+                title: Text('Gemini enabled — internet required'),
+                subtitle: Text(
+                  'No laptop needed. Speech is recognized on this phone. '
+                  'Conversation text goes to Google; no images or audio. '
+                  'Replies play on this phone. Free quotas apply.',
+                ),
+              ),
+            ),
+          ),
+
+        if (controllerState.isPaired && !controllerState.usesDirectGemini)
+          Semantics(
+            liveRegion: true,
+            child: Card(
+              child: ListTile(
+                leading:
+                    controllerState.backendStatus ==
+                        AssistantBackendStatus.checking
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(),
+                      )
+                    : const Icon(Icons.laptop),
+                title: Text(controllerState.backendStatus.label),
+                subtitle: const Text(
+                  'For clearer questions, use Speak. A temporary recording goes '
+                  'only to your paired laptop for speech recognition, then is '
+                  'deleted from both devices. Hands-free speech stays on this phone.',
+                ),
+              ),
+            ),
           ),
 
         // Laptop unavailable banner
-        if (sessionState == AssistantSessionState.laptopUnavailable)
-          _LaptopUnavailableBanner(onRetry: controller.retry),
+        if (!controllerState.usesDirectGemini &&
+            (sessionState == AssistantSessionState.laptopUnavailable ||
+                controllerState.backendStatus ==
+                    AssistantBackendStatus.unavailable))
+          _LaptopUnavailableBanner(onRetry: controller.connectBackend),
 
         // Error message
         if (sessionState == AssistantSessionState.error &&
@@ -275,12 +392,15 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         const SizedBox(height: AppSpacing.space6),
 
         // Safety reminder
-        const SafetyNotice(
+        SafetyNotice(
           title: 'Important',
           messages: [
             'The personal assistant does not replace a white cane, guide dog, or professional assistance.',
             'Detection alerts take priority over conversation.',
-            'Offline app-control speech is recognized and executed on this phone. If Gemini is configured, only unmatched general-conversation text may be processed by Google. Camera frames and raw audio are never sent.',
+            'Hands-free and unpaired voice controls are recognized on this phone.',
+            if (!controllerState.usesDirectGemini)
+              'In paired Smart AI, Speak sends a temporary recording only to your laptop. It is deleted from both devices after processing.',
+            'If Gemini is configured, it receives conversation text only. Camera frames and audio are never sent to Gemini.',
           ],
         ),
       ],
@@ -371,9 +491,17 @@ class _PushToTalkButton extends StatelessWidget {
     return Center(
       child: Semantics(
         button: true,
-        label: label.replaceAll('\n', ' '),
+        label: isListening
+            ? 'Send spoken question or command'
+            : isSpeaking
+            ? 'Stop assistant speech'
+            : isThinking
+            ? 'Assistant is processing your request'
+            : 'Speak to Vision AI',
         hint: semanticHint,
         enabled: canStart || isListening || isSpeaking,
+        onTap: (canStart || isListening || isSpeaking) ? onTap : null,
+        excludeSemantics: true,
         child: GestureDetector(
           key: AppKeys.assistantPushToTalkButton,
           onLongPressStart: canStart ? (_) => onHoldStart() : null,
@@ -554,6 +682,8 @@ class _SmallActionButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: semanticLabel,
+      onTap: onPressed,
+      excludeSemantics: true,
       child: OutlinedButton.icon(
         onPressed: onPressed,
         icon: Icon(icon, size: AppDimensions.iconSmall),
@@ -591,37 +721,32 @@ class _TextInputPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Expanded(
-          child: Semantics(
-            label: 'Type your question or request',
-            child: TextField(
-              key: AppKeys.assistantTextInput,
-              controller: controller,
-              enabled: enabled,
-              maxLines: 3,
-              minLines: 1,
-              decoration: const InputDecoration(
-                hintText: 'Type your question or request…',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: enabled ? onSubmit : null,
+          child: TextField(
+            key: AppKeys.assistantTextInput,
+            controller: controller,
+            enabled: enabled,
+            maxLines: 3,
+            minLines: 1,
+            decoration: const InputDecoration(
+              labelText: 'Question or command',
+              hintText: 'Type your question or request…',
+              border: OutlineInputBorder(),
             ),
+            onSubmitted: enabled ? onSubmit : null,
           ),
         ),
         const SizedBox(width: AppSpacing.space2),
-        Semantics(
-          button: true,
-          label: 'Send typed message',
-          child: IconButton.filled(
-            key: AppKeys.assistantTextSubmitButton,
-            onPressed: enabled
-                ? () {
-                    final text = controller.text.trim();
-                    if (text.isNotEmpty) onSubmit(text);
-                  }
-                : null,
-            icon: const Icon(Icons.send),
-            iconSize: AppDimensions.iconMedium,
-          ),
+        IconButton.filled(
+          tooltip: 'Send typed question or command',
+          key: AppKeys.assistantTextSubmitButton,
+          onPressed: enabled
+              ? () {
+                  final text = controller.text.trim();
+                  if (text.isNotEmpty) onSubmit(text);
+                }
+              : null,
+          icon: const Icon(Icons.send),
+          iconSize: AppDimensions.iconMedium,
         ),
       ],
     );
@@ -744,6 +869,8 @@ class _ConfirmationPanel extends StatelessWidget {
                   child: Semantics(
                     button: true,
                     label: 'Cancel action',
+                    onTap: onCancel,
+                    excludeSemantics: true,
                     child: OutlinedButton(
                       key: AppKeys.assistantCancelActionButton,
                       onPressed: onCancel,
@@ -756,6 +883,8 @@ class _ConfirmationPanel extends StatelessWidget {
                   child: Semantics(
                     button: true,
                     label: 'Confirm and execute action',
+                    onTap: onConfirm,
+                    excludeSemantics: true,
                     child: FilledButton(
                       key: AppKeys.assistantConfirmActionButton,
                       onPressed: onConfirm,
@@ -789,10 +918,18 @@ class _NotPairedBanner extends StatelessWidget {
         key: AppKeys.assistantNotPairedBanner,
         content: const Text(
           'Offline voice and typed app controls are ready on this phone. '
-          'Connect the optional laptop only for general conversation.',
+          'Choose Gemini or the optional laptop for general conversation.',
         ),
         leading: const Icon(AppIcons.connection, color: AppColors.warning),
-        actions: [TextButton(onPressed: onPair, child: const Text('Connect'))],
+        actions: [
+          Semantics(
+            label: 'Choose Gemini or laptop conversation settings',
+            button: true,
+            onTap: onPair,
+            excludeSemantics: true,
+            child: TextButton(onPressed: onPair, child: const Text('Connect')),
+          ),
+        ],
         backgroundColor: AppColors.warning.withValues(alpha: 0.1),
       ),
     );
@@ -814,7 +951,15 @@ class _LaptopUnavailableBanner extends StatelessWidget {
           'typed app controls, and detection remain active.',
         ),
         leading: const Icon(AppIcons.wifiOff, color: AppColors.warning),
-        actions: [TextButton(onPressed: onRetry, child: const Text('Retry'))],
+        actions: [
+          Semantics(
+            label: 'Retry assistant connection',
+            button: true,
+            onTap: onRetry,
+            excludeSemantics: true,
+            child: TextButton(onPressed: onRetry, child: const Text('Retry')),
+          ),
+        ],
         backgroundColor: AppColors.warning.withValues(alpha: 0.1),
       ),
     );
@@ -840,8 +985,23 @@ class _ErrorBanner extends StatelessWidget {
         content: Text(message),
         leading: const Icon(AppIcons.warning, color: AppColors.error),
         actions: [
-          TextButton(onPressed: onDismiss, child: const Text('Dismiss')),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
+          Semantics(
+            label: 'Dismiss assistant error',
+            button: true,
+            onTap: onDismiss,
+            excludeSemantics: true,
+            child: TextButton(
+              onPressed: onDismiss,
+              child: const Text('Dismiss'),
+            ),
+          ),
+          Semantics(
+            label: 'Retry assistant request',
+            button: true,
+            onTap: onRetry,
+            excludeSemantics: true,
+            child: TextButton(onPressed: onRetry, child: const Text('Retry')),
+          ),
         ],
         backgroundColor: AppColors.error.withValues(alpha: 0.1),
       ),

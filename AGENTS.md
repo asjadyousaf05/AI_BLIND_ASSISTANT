@@ -1,6 +1,6 @@
 # AI Blind Assistant Agent Guide
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-10-19
 
 ## Project Name and Purpose
 
@@ -23,8 +23,20 @@ The primary user is a blind or visually impaired Android user who may rely on Ta
 - Local-only settings.
 - No cloud processing or camera-frame upload.
 - Owner-authorized in-app push-to-talk assistant with local Whisper and Ollama.
+- Owner-approved paired Smart AI Speak-button audio may be sent only to the
+  private-LAN laptop for local Whisper. Disclose this before capture and delete
+  temporary clips from both devices after processing, including failure paths.
+  Hands-free and unpaired controls remain phone-local; no raw audio goes to Gemini.
 - Optional Gemini reasoning for typed/transcribed text only, with automatic
   Ollama fallback; core assistance remains independent and offline.
+- Owner-authorized optional Smart AI-only cloud audio (2026-10-19): after
+  disclosed opt-in and personal key entry, its foreground Speak button may
+  send a bounded temporary 16 kHz mono recording to Groq whisper-large-v3.
+  AgentRouter deepseek-v4-flash receives conversation text only, and replies
+  use local TTS. Vision AI/wake/control recognition and core vision remain local.
+  After AgentRouter's client rejection, the owner explicitly selected Groq
+  for both speech and answers: Groq GPT-OSS 20B may receive the same bounded
+  text after renewed provider-specific consent. Never switch providers silently.
 - Bounded app-control phrases use deterministic routing, never an AI provider.
   Typed controls execute on-device; spoken controls use local Whisper on the
   paired private-LAN laptop until verified on-device speech recognition exists.
@@ -123,9 +135,33 @@ Never log or store:
 - Device secrets.
 - Full local file contents.
 
-Gemini API keys are an owner-authorized assistant exception and must exist only
-in the ignored laptop-backend environment. They must never enter Flutter source,
-logs, screenshots, tests, tracked documentation, or Android storage.
+Gemini API keys are an owner-authorized assistant exception. Laptop keys exist
+only in the ignored backend environment. The owner's 2026-10-18/19 request also
+authorizes personal laptop-free Gemini: the user enters their own key through
+the disclosed opt-in form, and the existing Android Keystore channel encrypts
+it under a separate storage key. Never embed a shared key in an APK or put real
+keys in source, logs, screenshots, tests, or documentation. Direct Gemini is
+text-only; camera/audio upload and model-executed controls remain prohibited.
+See ADR-069 and the corresponding specification amendment.
+
+The owner's 2026-10-19 Groq/AgentRouter request additionally authorizes those
+two personal keys in the same Android Keystore mechanism under a separate
+Smart AI key. Only explicit Smart AI cloud capture may upload audio to Groq;
+never forward Vision AI, wake-listener, scanner or camera input. Delete local
+clips after transcription, cancellation and failure. Do not promise deletion
+of provider copies. AgentRouter receives bounded conversation text, never raw
+audio or executable tools. See ADR-070; this narrow newer exception supersedes
+older blanket cloud-audio prohibitions only for this foreground Smart AI path.
+The owner's subsequent Groq-only selection (ADR-071) permits bounded Smart AI
+conversation text to Groq GPT-OSS 20B using the saved personal Groq key. Keep
+provider selection encrypted, disclose it before capture, preserve legacy
+configuration without silently migrating it, and make no AgentRouter requests
+when Groq is selected.
+
+The owner's 2026-10-16 Smart AI speech approval permits transient recording and
+private-laptop processing only for the paired Speak-button path described above.
+It does not permit audio retention, audio logging, cloud speech upload or
+background recording. See the corresponding specification amendment and ADR-068.
 
 ## Testing Requirements
 

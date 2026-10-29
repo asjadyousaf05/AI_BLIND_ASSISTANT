@@ -171,7 +171,7 @@ abstract final class VoiceActionRegistry {
         VoiceFeatureContext.scannerCapture,
         VoiceFeatureContext.scannerReading,
       },
-      feedbackText: 'Ready to scan.',
+      feedbackText: 'Returning to scanner framing.',
     ),
     ReadDocumentAgain: const VoiceActionDefinition(
       intentType: ReadDocumentAgain,

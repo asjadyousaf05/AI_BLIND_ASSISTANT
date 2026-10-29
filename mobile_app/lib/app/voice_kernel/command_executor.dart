@@ -9,6 +9,7 @@ import '../../domain/enums/detection_sensitivity.dart';
 import '../../domain/enums/feedback_mode.dart';
 import '../../domain/enums/mobile_assistance_state.dart';
 import '../../domain/enums/voice_intent.dart';
+import '../../domain/enums/wearable_connection_phase.dart';
 import '../app.dart';
 import '../assistance_controller.dart';
 import '../assistant_providers.dart';
@@ -33,7 +34,10 @@ class CommandExecutor {
   final Ref ref;
 
   /// Executes a validated [VoiceCommand] and returns the result.
-  Future<VoiceCommandResult> execute(VoiceCommand command) async {
+  Future<VoiceCommandResult> execute(
+    VoiceCommand command, {
+    Future<void> Function(String message)? onProgress,
+  }) async {
     VoiceDiagnosticLogger.executed(command);
     try {
       return await switch (command.intent) {
@@ -44,26 +48,32 @@ class CommandExecutor {
         // ─────────────────── Navigation ─────────────────────────
         NavigateHome() => _navigate(RoutePaths.home, 'home'),
         NavigateSettings() => _navigate(RoutePaths.settings, 'settings'),
-        NavigateScanner() => _navigate(RoutePaths.ocrScanner, 'ocr_scanner'),
+        NavigateScanner() => _navigate(
+          RoutePaths.ocrScanner,
+          'document scanner',
+        ),
         NavigateSmartAi() => _navigate(RoutePaths.assistant, 'Smart AI'),
         NavigateMobileAssistance() => _navigate(
           RoutePaths.mobileAssistance,
-          'mobile_assistance',
+          'Mobile Mode',
         ),
         NavigateRaspberryPi() => _navigate(
           RoutePaths.raspberryPi,
-          'raspberry_pi',
+          'Raspberry Pi',
         ),
         NavigateModeSelection() => _navigate(RoutePaths.modeSelection, 'modes'),
-        NavigateSafety() => _navigate(RoutePaths.aboutSafety, 'safety'),
+        NavigateSafety() => _navigate(
+          RoutePaths.aboutSafety,
+          'About and Safety',
+        ),
         NavigateHelp() => _navigate(RoutePaths.help, 'help'),
         NavigateBack() => _navigateBack(),
 
         // ─────────────────── Mobile Detection ───────────────────
-        StartMobileDetection() => _startMobileMode(),
+        StartMobileDetection() => _startMobileMode(onProgress),
         StopMobileDetection() => _stopMobileMode(),
         PauseMobileDetection() => _pauseMobileMode(),
-        ResumeMobileDetection() => _resumeMobileMode(),
+        ResumeMobileDetection() => _resumeMobileMode(onProgress),
         GetMobileDetectionStatus() => _getMobileModeStatus(),
         ReadRecentDetections() => _readRecentDetections(),
 
@@ -91,8 +101,8 @@ class CommandExecutor {
 
         // ─────────────────── Raspberry Pi ───────────────────────
         GetPiStatus() => _getPiStatus(),
-        DiscoverPi() => _discoverPi(),
-        ConnectPi() => _connectPi(),
+        DiscoverPi() => _discoverPi(onProgress),
+        ConnectPi() => _connectPi(onProgress),
         DisconnectPi() => _disconnectPi(),
         StartWearable() => _startWearable(),
         StopWearable() => _stopWearable(),
@@ -190,7 +200,9 @@ class CommandExecutor {
       await ref.read(speechOutputServiceProvider).stop();
     } catch (_) {}
     try {
-      await ref.read(alertOrchestratorProvider).stop();
+      if (ref.exists(alertOrchestratorProvider)) {
+        await ref.read(alertOrchestratorProvider).stop();
+      }
     } catch (_) {}
     return const VoiceCommandSuccess();
   }
@@ -207,7 +219,11 @@ class CommandExecutor {
     if (appRouteObserver.currentRoute == route) {
       return VoiceCommandAlreadyInState('Already on $screenName screen.');
     }
-    navigator.pushNamed(route);
+    if (route == RoutePaths.home) {
+      navigator.pushNamedAndRemoveUntil(route, (_) => false);
+    } else {
+      navigator.pushNamed(route);
+    }
     return VoiceCommandSuccess(
       feedbackText: 'Opening $screenName.',
       data: {'route': route},
@@ -230,7 +246,21 @@ class CommandExecutor {
 
   // ─────────────────── Mobile Detection ───────────────────────
 
-  Future<VoiceCommandResult> _startMobileMode() async {
+  Future<VoiceCommandResult> _startMobileMode(
+    Future<void> Function(String)? onProgress,
+  ) async {
+    final before = ref.read(assistanceControllerProvider).state;
+    if (before.isActive) {
+      return const VoiceCommandAlreadyInState(
+        'Mobile Mode is already running.',
+      );
+    }
+    if (before.isBusy) {
+      return const VoiceCommandInvalidState(
+        'Mobile Mode is busy. Please wait for the current action to finish.',
+      );
+    }
+    await onProgress?.call('Starting Mobile Mode. Preparing the camera.');
     final navigator = appNavigatorKey.currentState;
     if (navigator != null &&
         appRouteObserver.currentRoute == RoutePaths.ocrScanner) {
@@ -252,17 +282,29 @@ class CommandExecutor {
     final controller = ref.read(assistanceControllerProvider.notifier);
     await controller.startAssistance();
     final current = ref.read(assistanceControllerProvider);
-    if (current.state == MobileAssistanceState.error) {
-      return VoiceCommandFailure(
-        current.errorMessage ?? 'Mobile assistance failed to start.',
-      );
-    }
-    return const VoiceCommandSuccess(feedbackText: 'Mobile Mode started.');
+    return current.state.isActive
+        ? const VoiceCommandSuccess(
+            feedbackText: 'Mobile Mode started. Object detection is active.',
+          )
+        : VoiceCommandFailure(
+            current.errorMessage ??
+                (current.state == MobileAssistanceState.permissionRequired
+                    ? 'Mobile Mode did not start. Allow camera access and try again.'
+                    : 'Mobile Mode did not start. Its status is ${current.state.label}.'),
+          );
   }
 
   Future<VoiceCommandResult> _stopMobileMode() async {
     final controller = ref.read(assistanceControllerProvider.notifier);
     await controller.stopAssistance();
+    final stopped = ref.read(assistanceControllerProvider);
+    if (stopped.state.isActive ||
+        stopped.state == MobileAssistanceState.error ||
+        stopped.state.isBusy) {
+      return VoiceCommandFailure(
+        stopped.errorMessage ?? 'Mobile Mode did not stop. Please try again.',
+      );
+    }
     try {
       await ref.read(alertOrchestratorProvider).stop();
     } catch (_) {}
@@ -294,14 +336,23 @@ class CommandExecutor {
           );
   }
 
-  Future<VoiceCommandResult> _resumeMobileMode() async {
+  Future<VoiceCommandResult> _resumeMobileMode(
+    Future<void> Function(String)? onProgress,
+  ) async {
+    if (ref.read(assistanceControllerProvider).state.isActive) {
+      return const VoiceCommandAlreadyInState(
+        'Mobile Mode is already running.',
+      );
+    }
+    await onProgress?.call('Resuming Mobile Mode. Preparing the camera.');
     final controller = ref.read(assistanceControllerProvider.notifier);
     await controller.startAssistance();
     final current = ref.read(assistanceControllerProvider);
     return current.state.isActive
         ? const VoiceCommandSuccess(feedbackText: 'Mobile Mode resumed.')
         : VoiceCommandFailure(
-            'Mobile Mode could not be resumed from ${current.state.label}.',
+            current.errorMessage ??
+                'Mobile Mode could not be resumed from ${current.state.label}.',
           );
   }
 
@@ -342,19 +393,21 @@ class CommandExecutor {
     ref
         .read(ocrActionTriggerProvider.notifier)
         .trigger(OcrActionTrigger.capture);
-    return const VoiceCommandSuccess(feedbackText: 'Scanning document.');
+    return const VoiceCommandSuccess();
   }
 
   VoiceCommandResult _ocrRescan() {
+    // Reopen framing like Scan Another Page so the user can position the
+    // document. Only a later explicit capture request should take the photo.
     ref.read(ocrActionTriggerProvider.notifier).trigger(OcrActionTrigger.reset);
-    return const VoiceCommandSuccess(feedbackText: 'Ready to scan.');
+    return const VoiceCommandSuccess();
   }
 
   VoiceCommandResult _ocrReadAgain() {
     ref
         .read(ocrActionTriggerProvider.notifier)
         .trigger(OcrActionTrigger.readAgain);
-    return const VoiceCommandSuccess(feedbackText: 'Reading text again.');
+    return const VoiceCommandSuccess();
   }
 
   VoiceCommandResult _ocrSwitchCamera() {
@@ -467,17 +520,37 @@ class CommandExecutor {
     );
   }
 
-  Future<VoiceCommandResult> _discoverPi() async {
+  static const _piNotFound =
+      'No Raspberry Pi was found. Check that it is powered on and connected '
+      'to the same Wi-Fi or phone hotspot, then try again.';
+
+  Future<VoiceCommandResult> _discoverPi(
+    Future<void> Function(String)? onProgress,
+  ) async {
+    if (ref.read(wearableControllerProvider).actionInProgress) {
+      return const VoiceCommandInvalidState(
+        'Raspberry Pi is busy. Please wait.',
+      );
+    }
+    await onProgress?.call('Finding Raspberry Pi on your local network.');
     final controller = ref.read(wearableControllerProvider.notifier);
     await controller.discover();
     final current = ref.read(wearableControllerProvider);
+    if (current.failure != null) {
+      return VoiceCommandFailure(current.failure!.userMessage);
+    }
     final count = current.session.discoveredDevices.length;
+    if (count == 0) return const VoiceCommandUnavailable(_piNotFound);
     return VoiceCommandSuccess(
-      feedbackText: 'Found $count wearable device${count == 1 ? '' : 's'}.',
+      feedbackText: count == 1
+          ? 'Raspberry Pi found. Say connect to Raspberry Pi to connect.'
+          : 'Found $count Raspberry Pi devices. Choose one on the Raspberry Pi screen.',
     );
   }
 
-  Future<VoiceCommandResult> _connectPi() async {
+  Future<VoiceCommandResult> _connectPi(
+    Future<void> Function(String)? onProgress,
+  ) async {
     final controller = ref.read(wearableControllerProvider.notifier);
     var current = ref.read(wearableControllerProvider);
     if (current.session.phase.isConnected) {
@@ -485,26 +558,39 @@ class CommandExecutor {
         'Raspberry Pi is already connected.',
       );
     }
+    if (current.actionInProgress) {
+      return const VoiceCommandInvalidState(
+        'Raspberry Pi is busy. Please wait.',
+      );
+    }
     if (current.session.selectedDevice == null) {
+      await onProgress?.call('Finding Raspberry Pi on your local network.');
       await controller.discover();
       current = ref.read(wearableControllerProvider);
+      if (current.failure != null) {
+        return VoiceCommandFailure(current.failure!.userMessage);
+      }
       if (current.session.discoveredDevices.length == 1) {
         controller.selectDevice(current.session.discoveredDevices.single);
       } else {
         return VoiceCommandUnavailable(
           current.session.discoveredDevices.isEmpty
-              ? 'No Raspberry Pi wearable was found on the local network.'
-              : 'Multiple wearables found. Please select one on screen.',
+              ? _piNotFound
+              : 'Multiple Raspberry Pi devices found. Choose one on the Raspberry Pi screen.',
         );
       }
     }
+    await onProgress?.call('Connecting to Raspberry Pi.');
     await controller.connect();
     current = ref.read(wearableControllerProvider);
     return current.session.phase.isConnected
-        ? const VoiceCommandSuccess(feedbackText: 'Raspberry Pi connected.')
+        ? const VoiceCommandSuccess(
+            feedbackText:
+                'Raspberry Pi connected. Say start wearable to begin detection.',
+          )
         : VoiceCommandFailure(
             current.failure?.userMessage ??
-                'The wearable could not be reached.',
+                'Raspberry Pi could not connect. Check its power and network, then try again.',
           );
   }
 
@@ -519,7 +605,7 @@ class CommandExecutor {
   Future<VoiceCommandResult> _startWearable() async {
     await ref.read(wearableControllerProvider.notifier).startAssistance();
     final current = ref.read(wearableControllerProvider);
-    return current.session.phase.name == 'running'
+    return current.session.phase == WearableConnectionPhase.running
         ? const VoiceCommandSuccess(
             feedbackText: 'Wearable assistance started.',
           )
@@ -531,23 +617,40 @@ class CommandExecutor {
 
   Future<VoiceCommandResult> _stopWearable() async {
     await ref.read(wearableControllerProvider.notifier).stopAssistance();
-    return const VoiceCommandSuccess(
-      feedbackText: 'Wearable assistance stopped.',
-    );
+    final current = ref.read(wearableControllerProvider);
+    return current.failure == null &&
+            current.session.phase == WearableConnectionPhase.connected
+        ? const VoiceCommandSuccess(
+            feedbackText: 'Wearable assistance stopped.',
+          )
+        : VoiceCommandFailure(
+            current.failure?.userMessage ??
+                'Wearable assistance did not confirm it stopped.',
+          );
   }
 
   Future<VoiceCommandResult> _pauseWearable() async {
     await ref.read(wearableControllerProvider.notifier).pauseAssistance();
-    return const VoiceCommandSuccess(
-      feedbackText: 'Wearable assistance paused.',
-    );
+    final current = ref.read(wearableControllerProvider);
+    return current.session.phase == WearableConnectionPhase.paused
+        ? const VoiceCommandSuccess(feedbackText: 'Wearable assistance paused.')
+        : VoiceCommandFailure(
+            current.failure?.userMessage ??
+                'Wearable assistance could not be paused.',
+          );
   }
 
   Future<VoiceCommandResult> _resumeWearable() async {
     await ref.read(wearableControllerProvider.notifier).resumeAssistance();
-    return const VoiceCommandSuccess(
-      feedbackText: 'Wearable assistance resumed.',
-    );
+    final current = ref.read(wearableControllerProvider);
+    return current.session.phase == WearableConnectionPhase.running
+        ? const VoiceCommandSuccess(
+            feedbackText: 'Wearable assistance resumed.',
+          )
+        : VoiceCommandFailure(
+            current.failure?.userMessage ??
+                'Wearable assistance could not be resumed.',
+          );
   }
 
   // ─────────────────── Settings ───────────────────────────────
@@ -613,11 +716,18 @@ class CommandExecutor {
                 : OcrActionTrigger.disableTorch,
           );
       return VoiceCommandSuccess(
-        feedbackText: 'Scanner flashlight turned ${enabled ? 'on' : 'off'}.',
+        feedbackText:
+            'Requesting scanner flashlight ${enabled ? 'on' : 'off'}.',
       );
     }
     try {
-      await ref.read(cameraServiceProvider).setTorch(enabled);
+      final camera = ref.read(cameraServiceProvider);
+      await camera.setTorch(enabled);
+      if (camera.isTorchOn != enabled) {
+        return const VoiceCommandUnavailable(
+          'Flashlight is unavailable. Start the camera and try again.',
+        );
+      }
       return VoiceCommandSuccess(
         feedbackText: 'Flashlight turned ${enabled ? 'on' : 'off'}.',
       );
@@ -626,13 +736,13 @@ class CommandExecutor {
     }
   }
 
-  VoiceCommandResult _setSpeechRate(String rate) {
+  Future<VoiceCommandResult> _setSpeechRate(String rate) async {
     final speed = switch (rate) {
       'fast' => 0.65,
       'slow' => 0.35,
       _ => 0.5,
     };
-    unawaited(ref.read(speechOutputServiceProvider).setSpeechRate(speed));
+    await ref.read(speechOutputServiceProvider).setSpeechRate(speed);
     return VoiceCommandSuccess(feedbackText: 'Speech rate set to $rate.');
   }
 
@@ -699,15 +809,27 @@ class CommandExecutor {
     );
   }
 
-  VoiceCommandResult _getBatteryStatus() {
-    return const VoiceCommandSuccess(
-      feedbackText: 'Battery level is 85 percent.',
-      data: {'level': 85},
+  Future<VoiceCommandResult> _getBatteryStatus() async {
+    final percentage = await ref
+        .read(batteryStatusServiceProvider)
+        .readPercentage();
+    if (percentage == null) {
+      return const VoiceCommandUnavailable('Battery status is unavailable.');
+    }
+    return VoiceCommandSuccess(
+      feedbackText: 'Battery level is $percentage percent.',
+      data: {'level': percentage},
     );
   }
 
   VoiceCommandResult _getAssistantConnectionStatus() {
     final session = ref.read(assistantSessionControllerProvider);
+    if (session.usesDirectGemini) {
+      return const VoiceCommandSuccess(
+        feedbackText:
+            'Smart AI uses Gemini directly. Internet is required; no laptop is needed.',
+      );
+    }
     if (session.isPaired) {
       return const VoiceCommandSuccess(
         feedbackText: 'Smart AI is connected to your laptop backend.',

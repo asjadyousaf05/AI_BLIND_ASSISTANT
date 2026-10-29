@@ -1,0 +1,122 @@
+[
+  {
+    "label": "Connect Assistant",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Go back from Connect Assistant",
+    "bounds": [
+      8,
+      56,
+      104,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Connect Assistant",
+    "bounds": [
+      179,
+      78,
+      541,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Pair with your laptop",
+    "bounds": [
+      48,
+      208,
+      672,
+      254
+    ],
+    "clickable": false
+  },
+  {
+    "label": "This Mac is selected by default at 10.141.17.235, port 8765.",
+    "bounds": [
+      48,
+      286,
+      672,
+      462
+    ],
+    "clickable": false
+  },
+  {
+    "label": "This Mac \u2014 Wi-Fi Direct\n10.141.17.235:8765",
+    "bounds": [
+      48,
+      286,
+      672,
+      462
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Use",
+    "bounds": [
+      488,
+      326,
+      616,
+      422
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Wi-Fi (10.141.17.235)",
+    "bounds": [
+      48,
+      486,
+      469,
+      582
+    ],
+    "clickable": true
+  },
+  {
+    "label": "USB Cable (127.0.0.1)",
+    "bounds": [
+      48,
+      598,
+      471,
+      694
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Emulator (10.0.2.2)",
+    "bounds": [
+      48,
+      710,
+      431,
+      806
+    ],
+    "clickable": true
+  },
+  {
+    "label": "How to pair",
+    "bounds": [
+      80,
+      870,
+      244,
+      908
+    ],
+    "clickable": false
+  },
+  {
+    "label": "This Mac is already selected and its assistant starts automatically at login. For the first secure connection, enter the one-time pairing code shown on this Mac and tap Pair. The app remembers the encrypted connection after that.\n\nWhen using another laptop, replace the host and port with that laptop\u2019s details, start its backend, and use its pairing code.\n\nGemini is used only when GEMINI_API_KEY or GOOGLE_API_KEY is set on the laptop. Otherwise the backend uses local Ollama. The phone recognizes app-control speech on-device; these commands need no pairing and bypass both providers. Only unmatched general-conversation text and typed conversation text may be sent to Gemini. Camera frames and raw audio are never sent.",
+    "bounds": [
+      80,
+      924,
+      640,
+      1552
+    ],
+    "clickable": false
+  }
+]

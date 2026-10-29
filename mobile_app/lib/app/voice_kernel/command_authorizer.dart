@@ -132,7 +132,6 @@ class CommandAuthorizer {
       deduplicator.consume(event.recognitionId);
 
   bool _isSelfEcho(VoiceCommand command) {
-    if (!ttsEchoGuard.isSpeaking) return false;
     return ttsEchoGuard.isSelfEcho(command.normalizedTranscript);
   }
 }

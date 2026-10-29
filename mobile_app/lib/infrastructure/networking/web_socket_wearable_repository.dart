@@ -81,6 +81,11 @@ class WebSocketWearableRepository implements WearableRepository {
   bool _intentionalDisconnect = false;
   bool _authenticationRejected = false;
   bool _reconnectInProgress = false;
+  bool _connectionRequested = false;
+  int _connectionGeneration = 0;
+  int _discoveryGeneration = 0;
+  int _sessionGeneration = 0;
+  Completer<void>? _operationCancelled;
   bool _disposed = false;
 
   @override
@@ -99,8 +104,10 @@ class WebSocketWearableRepository implements WearableRepository {
   }
 
   Future<void> _restoreSavedDevice() async {
+    final generation = _sessionGeneration;
     try {
       final credential = await _credentialRepository.readLastPaired();
+      if (_disposed || generation != _sessionGeneration) return;
       if (credential == null) {
         _emit(
           _state.copyWith(
@@ -120,6 +127,7 @@ class WebSocketWearableRepository implements WearableRepository {
         ),
       );
     } on Object catch (error) {
+      if (_disposed || generation != _sessionGeneration) return;
       _reportFailure(
         _classify(error, fallbackKind: WearableFailureKind.storage),
         phase: WearableConnectionPhase.unavailable,
@@ -130,6 +138,7 @@ class WebSocketWearableRepository implements WearableRepository {
   @override
   Future<List<WearableDevice>> discover() async {
     _ensureUsable();
+    final generation = ++_discoveryGeneration;
     _emit(
       _state.copyWith(
         phase: WearableConnectionPhase.discovering,
@@ -138,6 +147,9 @@ class WebSocketWearableRepository implements WearableRepository {
     );
     try {
       final devices = await _discoveryService.discover();
+      if (_disposed || generation != _discoveryGeneration) {
+        throw const _ConnectionCancelled();
+      }
       final selected = _state.selectedDevice;
       final merged = <String, WearableDevice>{
         if (selected != null) selected.id: selected,
@@ -154,6 +166,7 @@ class WebSocketWearableRepository implements WearableRepository {
       );
       return merged;
     } on Object catch (error) {
+      if (_disposed || generation != _discoveryGeneration) rethrow;
       _reportFailure(
         _classify(error, fallbackKind: WearableFailureKind.discovery),
         phase: WearableConnectionPhase.unavailable,
@@ -165,9 +178,14 @@ class WebSocketWearableRepository implements WearableRepository {
   @override
   void selectDevice(WearableDevice device) {
     _ensureUsable();
+    if (_connectionOperation || _state.phase.isConnected) return;
+    final trusted = _activeCredential?.deviceId == device.id;
+    if (!trusted) _activeCredential = null;
     _emit(
       _state.copyWith(
-        phase: WearableConnectionPhase.deviceFound,
+        phase: trusted
+            ? WearableConnectionPhase.paired
+            : WearableConnectionPhase.deviceFound,
         selectedDevice: device,
         clearFailure: true,
       ),
@@ -226,19 +244,46 @@ class WebSocketWearableRepository implements WearableRepository {
     if (selected == null) {
       throw StateError('Select a wearable device before enrollment');
     }
-    _beginConnectionOperation();
+    final generation = _beginConnectionOperation();
     _intentionalDisconnect = true;
     _authenticationRejected = false;
     _emit(_state.copyWith(phase: phase, clearFailure: true));
     try {
-      selected = await _resolveLocalEndpoint(selected);
+      selected = await _duringOperation(
+        _resolveLocalEndpoint(selected),
+        generation,
+      );
       _emit(_state.copyWith(selectedDevice: selected));
-      await _transport.disconnect(reason: 'begin_$disconnectReason');
+      await _duringOperation(
+        _transport.disconnect(reason: 'begin_$disconnectReason'),
+        generation,
+      );
       _transport.clearAuthentication();
-      final helloFuture = _nextMessage(ProtocolMessageType.hello);
-      await _transport.connect(selected.webSocketUri);
-      final hello = await helloFuture;
+      final hello = await _openAndReceiveHello(selected, generation);
       final actualDevice = _deviceFromHello(selected, hello);
+      _messageFactory.synchronizePeerClock(hello.timestamp);
+      final saved = await _duringOperation(
+        _credentialRepository.read(actualDevice.id),
+        generation,
+      );
+      if (saved != null &&
+          requestType == ProtocolMessageType.enrollmentRequest) {
+        // A discovery selection or manually refreshed address must not enroll
+        // the same phone again. The next connect still proves this credential.
+        _activeCredential = saved;
+        await _duringOperation(
+          _transport.disconnect(reason: 'trusted_credential_restored'),
+          generation,
+        );
+        _emit(
+          _state.copyWith(
+            phase: WearableConnectionPhase.paired,
+            selectedDevice: actualDevice,
+            clearFailure: true,
+          ),
+        );
+        return;
+      }
       if (requestType == ProtocolMessageType.enrollmentRequest) {
         final capabilities = hello.payload['capabilities'];
         final supportsEnrollment =
@@ -256,7 +301,10 @@ class WebSocketWearableRepository implements WearableRepository {
           );
         }
       }
-      final clientId = await _credentialRepository.getOrCreateClientId();
+      final clientId = await _duringOperation(
+        _credentialRepository.getOrCreateClientId(),
+        generation,
+      );
       final request = _messageFactory.create(
         requestType,
         payload: payloadForClient(clientId),
@@ -266,8 +314,10 @@ class WebSocketWearableRepository implements WearableRepository {
         predicate: (message) =>
             message.payload['requestMessageId'] == request.messageId,
       );
-      await _transport.send(request, requireAcknowledgement: false);
-      final result = await resultFuture;
+      final result = await _duringOperation(
+        _sendAndReceive(request, resultFuture),
+        generation,
+      );
       if (result.payload[successField] != true) {
         final code =
             (result.payload['errorCode'] as String?) ??
@@ -297,9 +347,15 @@ class WebSocketWearableRepository implements WearableRepository {
         secret: secret,
         createdAt: DateTime.now().toUtc(),
       );
-      await _credentialRepository.write(credential);
+      await _duringOperation(
+        _credentialRepository.write(credential),
+        generation,
+      );
       _activeCredential = credential;
-      await _transport.disconnect(reason: '${disconnectReason}_complete');
+      await _duringOperation(
+        _transport.disconnect(reason: '${disconnectReason}_complete'),
+        generation,
+      );
       _emit(
         _state.copyWith(
           phase: WearableConnectionPhase.paired,
@@ -308,10 +364,11 @@ class WebSocketWearableRepository implements WearableRepository {
         ),
       );
     } on Object catch (error) {
+      if (!_operationIsActive(generation)) rethrow;
       await _transport.disconnect(reason: '${disconnectReason}_failed');
       final failure = _classify(
         error,
-        fallbackKind: WearableFailureKind.authentication,
+        fallbackKind: WearableFailureKind.network,
       );
       _reportFailure(
         failure,
@@ -323,32 +380,36 @@ class WebSocketWearableRepository implements WearableRepository {
       );
       rethrow;
     } finally {
-      _connectionOperation = false;
-      _intentionalDisconnect = false;
+      _finishConnectionOperation(generation);
+      if (_connectionRequested) _intentionalDisconnect = false;
     }
   }
 
   @override
   Future<void> connect() async {
+    final generation = _sessionGeneration;
     await initialize();
     _ensureUsable();
+    if (generation != _sessionGeneration) throw const _ConnectionCancelled();
     if (_connectionOperation) {
       throw StateError('A wearable connection operation is already active');
     }
-    var selected = _state.selectedDevice;
+    final selected = _state.selectedDevice;
     if (selected == null) {
       _emit(_state.copyWith(phase: WearableConnectionPhase.notConfigured));
       throw StateError('No paired wearable device is configured');
     }
     final credential =
-        _activeCredential ?? await _credentialRepository.read(selected.id);
+        (_activeCredential?.deviceId == selected.id
+            ? _activeCredential
+            : null) ??
+        await _credentialRepository.read(selected.id);
+    if (generation != _sessionGeneration) throw const _ConnectionCancelled();
     if (credential == null) {
-      _emit(_state.copyWith(phase: WearableConnectionPhase.notConfigured));
-      throw StateError('The selected wearable device has not been paired');
+      await enroll();
+      return connect();
     }
     _activeCredential = credential;
-    selected = await _refreshEndpoint(credential, selected);
-    _emit(_state.copyWith(selectedDevice: selected));
     await _connectWithCredential(
       credential,
       selected,
@@ -361,20 +422,54 @@ class WebSocketWearableRepository implements WearableRepository {
     WearableDevice device, {
     required bool reconnecting,
   }) async {
-    _beginConnectionOperation();
+    final generation = _beginConnectionOperation();
+    _connectionRequested = true;
     _intentionalDisconnect = false;
     _authenticationRejected = false;
+    _remoteSessionSource = null;
+    ++_sessionGeneration;
+    _emit(
+      _state.copyWith(
+        phase: reconnecting
+            ? WearableConnectionPhase.reconnecting
+            : WearableConnectionPhase.connecting,
+        clearTelemetry: true,
+        clearFailure: true,
+      ),
+    );
     try {
       await _retryPolicy.execute<void>(
-        (_) => _connectOnce(credential, device, reconnecting: reconnecting),
-        shouldRetry: _shouldRetryConnection,
+        (_) async {
+          _checkOperation(generation);
+          final refreshed = await _duringOperation(
+            _refreshEndpoint(credential, device),
+            generation,
+          );
+          await _connectOnce(
+            credential,
+            refreshed,
+            reconnecting: reconnecting,
+            generation: generation,
+          );
+        },
+        shouldRetry: (error) =>
+            _operationIsActive(generation) && _shouldRetryConnection(error),
+        sleeper: (delay) =>
+            _duringOperation(Future<void>.delayed(delay), generation),
       );
     } on Object catch (error) {
+      if (!_operationIsActive(generation)) rethrow;
+      await _transport.disconnect(reason: 'connection_failed');
+      _transport.clearAuthentication();
+      _remoteSessionSource = null;
       final failure = _classify(error);
+      // A new user action or foreground resume can start another bounded run.
+      // Late socket events must not restart an exhausted retry budget.
+      _connectionRequested = false;
       _reportFailure(failure, phase: _phaseForFailure(failure));
       rethrow;
     } finally {
-      _connectionOperation = false;
+      _finishConnectionOperation(generation);
     }
   }
 
@@ -382,8 +477,12 @@ class WebSocketWearableRepository implements WearableRepository {
     WearableCredential credential,
     WearableDevice device, {
     required bool reconnecting,
+    required int generation,
   }) async {
-    await _transport.disconnect(reason: 'connection_retry');
+    await _duringOperation(
+      _transport.disconnect(reason: 'connection_retry'),
+      generation,
+    );
     _transport.clearAuthentication();
     _deduplicator.clear();
     _emit(
@@ -394,15 +493,15 @@ class WebSocketWearableRepository implements WearableRepository {
         clearFailure: true,
       ),
     );
-    final helloFuture = _nextMessage(ProtocolMessageType.hello);
-    await _transport.connect(device.webSocketUri);
-    final hello = await helloFuture;
+    final hello = await _openAndReceiveHello(device, generation);
     _validateHello(hello, credential.deviceId);
+    _messageFactory.synchronizePeerClock(hello.timestamp);
     final nonce = hello.payload['nonce']! as String;
     _remoteSessionSource = '${credential.deviceId}:$nonce';
     final signer = AuthenticatedEnvelopeSigner(sessionNonce: nonce);
     _transport.configureAuthentication(
-      signer: (message) => signer.sign(message, credential),
+      signer: (message) =>
+          signer.sign(_messageFactory.stampForSession(message), credential),
       verifier: (message) => signer.verify(message, credential),
     );
     _emit(_state.copyWith(phase: WearableConnectionPhase.authenticating));
@@ -417,7 +516,10 @@ class WebSocketWearableRepository implements WearableRepository {
           )
           .toPayload(),
     );
-    final acknowledgement = await _transport.send(authentication);
+    final acknowledgement = await _duringOperation(
+      _transport.send(authentication),
+      generation,
+    );
     final parsed = ProtocolAcknowledgement.fromPayload(
       acknowledgement!.payload,
     );
@@ -431,8 +533,15 @@ class WebSocketWearableRepository implements WearableRepository {
     final settingsFuture = _nextMessage(
       ProtocolMessageType.synchronizeSettings,
     );
-    await _sendCommand(ProtocolMessageType.requestCurrentSettings);
-    await settingsFuture;
+    await _duringOperation(
+      Future.wait<void>([
+        _sendCommand(
+          ProtocolMessageType.requestCurrentSettings,
+        ).then<void>((_) {}),
+        settingsFuture.then<void>((_) {}),
+      ], eagerError: true),
+      generation,
+    );
     _emit(
       _state.copyWith(
         phase: _phaseForAssistanceState(
@@ -457,7 +566,10 @@ class WebSocketWearableRepository implements WearableRepository {
         secret: credential.secret,
         createdAt: credential.createdAt,
       );
-      await _credentialRepository.write(refreshed);
+      await _duringOperation(
+        _credentialRepository.write(refreshed),
+        generation,
+      );
       _activeCredential = refreshed;
     }
   }
@@ -481,7 +593,9 @@ class WebSocketWearableRepository implements WearableRepository {
   }
 
   Future<WearableDevice> _resolveLocalEndpoint(WearableDevice endpoint) async {
-    final resolved = await _discoveryService.resolve(endpoint.host);
+    final resolved = await _discoveryService
+        .resolve(endpoint.host)
+        .timeout(handshakeTimeout);
     if (resolved == null) {
       throw StateError(
         'The wearable endpoint did not resolve to a private local address',
@@ -493,12 +607,16 @@ class WebSocketWearableRepository implements WearableRepository {
   @override
   Future<void> startAssistance() async {
     _requirePhase(WearableConnectionPhase.connected);
+    final generation = _sessionGeneration;
     _emit(_state.copyWith(phase: WearableConnectionPhase.starting));
     try {
       await _sendCommand(ProtocolMessageType.startAssistance);
+      _checkSession(generation);
       _emit(_state.copyWith(phase: WearableConnectionPhase.running));
     } on Object {
-      _emit(_state.copyWith(phase: WearableConnectionPhase.connected));
+      if (_sessionIsActive(generation)) {
+        _emit(_state.copyWith(phase: WearableConnectionPhase.connected));
+      }
       rethrow;
     }
   }
@@ -506,14 +624,18 @@ class WebSocketWearableRepository implements WearableRepository {
   @override
   Future<void> pauseAssistance() async {
     _requirePhase(WearableConnectionPhase.running);
+    final generation = _sessionGeneration;
     await _sendCommand(ProtocolMessageType.pauseAssistance);
+    _checkSession(generation);
     _emit(_state.copyWith(phase: WearableConnectionPhase.paused));
   }
 
   @override
   Future<void> resumeAssistance() async {
     _requirePhase(WearableConnectionPhase.paused);
+    final generation = _sessionGeneration;
     await _sendCommand(ProtocolMessageType.resumeAssistance);
+    _checkSession(generation);
     _emit(_state.copyWith(phase: WearableConnectionPhase.running));
   }
 
@@ -524,12 +646,14 @@ class WebSocketWearableRepository implements WearableRepository {
       throw StateError('Wearable assistance is not active');
     }
     final previous = _state.phase;
+    final generation = _sessionGeneration;
     _emit(_state.copyWith(phase: WearableConnectionPhase.stopping));
     try {
       await _sendCommand(ProtocolMessageType.stopAssistance);
+      _checkSession(generation);
       _emit(_state.copyWith(phase: WearableConnectionPhase.connected));
     } on Object {
-      _emit(_state.copyWith(phase: previous));
+      if (_sessionIsActive(generation)) _emit(_state.copyWith(phase: previous));
       rethrow;
     }
   }
@@ -546,10 +670,12 @@ class WebSocketWearableRepository implements WearableRepository {
   @override
   Future<void> updateSettings(WearableSettingsSnapshot settings) async {
     _requireConnected();
+    final generation = _sessionGeneration;
     await _sendCommand(
       ProtocolMessageType.updateSettings,
       payload: settings.toPayload(),
     );
+    _checkSession(generation);
     _emit(_state.copyWith(currentSettings: settings));
   }
 
@@ -570,8 +696,19 @@ class WebSocketWearableRepository implements WearableRepository {
   @override
   Future<void> disconnect() async {
     if (_disposed) return;
+    _connectionRequested = false;
     _intentionalDisconnect = true;
-    _reconnectInProgress = false;
+    ++_discoveryGeneration;
+    ++_sessionGeneration;
+    _remoteSessionSource = null;
+    if (_operationCancelled case final cancelled? when !cancelled.isCompleted) {
+      cancelled.complete();
+    }
+    try {
+      await _discoveryService.stop();
+    } on Object {
+      // Transport cancellation still proceeds when native discovery is gone.
+    }
     await _transport.disconnect(reason: 'app_disconnect');
     _transport.clearAuthentication();
     _remoteSessionSource = null;
@@ -605,7 +742,7 @@ class WebSocketWearableRepository implements WearableRepository {
         rethrow;
       }
     }
-    await _transport.disconnect(reason: 'forget_device');
+    await disconnect();
     if (selected != null) {
       await _credentialRepository.delete(selected.id);
     }
@@ -741,7 +878,9 @@ class WebSocketWearableRepository implements WearableRepository {
 
   bool _acceptServerEvent(ProtocolEnvelope message) {
     final source = _remoteSessionSource;
-    if (source == null) return false;
+    if (source == null || _intentionalDisconnect || _authenticationRejected) {
+      return false;
+    }
     return _deduplicator.accept(
       sourceId: source,
       sequence: message.sequence,
@@ -750,13 +889,22 @@ class WebSocketWearableRepository implements WearableRepository {
   }
 
   void _handleTransportError(Object error, StackTrace stackTrace) {
-    if (_disposed) return;
+    if (_disposed || _intentionalDisconnect) return;
     final failure = _classify(error);
     if (failure.kind == WearableFailureKind.authentication ||
         failure.kind == WearableFailureKind.incompatibleProtocol) {
       _authenticationRejected = true;
     }
+    final shouldReconnect =
+        _state.phase.isConnected &&
+        _connectionRequested &&
+        !_connectionOperation &&
+        !_intentionalDisconnect &&
+        !_authenticationRejected &&
+        (failure.kind == WearableFailureKind.network ||
+            failure.kind == WearableFailureKind.timeout);
     _reportFailure(failure, phase: _phaseForFailure(failure));
+    if (shouldReconnect) _beginAutomaticReconnect();
   }
 
   void _handleTransportStatus(WearableTransportStatus status) {
@@ -768,7 +916,9 @@ class WebSocketWearableRepository implements WearableRepository {
     }
     if ((status == WearableTransportStatus.error ||
             status == WearableTransportStatus.stale) &&
-        _state.phase.isConnected &&
+        _connectionRequested &&
+        (_state.phase.isConnected ||
+            _state.phase == WearableConnectionPhase.unavailable) &&
         _state.selectedDevice != null &&
         _activeCredential != null) {
       _emit(_state.copyWith(phase: WearableConnectionPhase.unavailable));
@@ -777,25 +927,16 @@ class WebSocketWearableRepository implements WearableRepository {
   }
 
   void _beginAutomaticReconnect() {
-    if (_reconnectInProgress || _disposed) return;
+    if (_reconnectInProgress || _disposed || !_connectionRequested) return;
     final credential = _activeCredential;
     final device = _state.selectedDevice;
     if (credential == null || device == null) return;
     _reconnectInProgress = true;
     unawaited(
-      _reconnectAfterDiscovery(credential, device)
+      _connectWithCredential(credential, device, reconnecting: true)
           .catchError((Object _) {})
           .whenComplete(() => _reconnectInProgress = false),
     );
-  }
-
-  Future<void> _reconnectAfterDiscovery(
-    WearableCredential credential,
-    WearableDevice fallback,
-  ) async {
-    final refreshed = await _refreshEndpoint(credential, fallback);
-    _emit(_state.copyWith(selectedDevice: refreshed));
-    await _connectWithCredential(credential, refreshed, reconnecting: true);
   }
 
   WearableDevice _deviceFromHello(
@@ -956,6 +1097,16 @@ class WebSocketWearableRepository implements WearableRepository {
     }
   }
 
+  bool _sessionIsActive(int generation) =>
+      !_disposed &&
+      generation == _sessionGeneration &&
+      _connectionRequested &&
+      !_intentionalDisconnect;
+
+  void _checkSession(int generation) {
+    if (!_sessionIsActive(generation)) throw const _ConnectionCancelled();
+  }
+
   void _requireConnected() {
     _ensureUsable();
     if (!_state.phase.isConnected) {
@@ -963,11 +1114,73 @@ class WebSocketWearableRepository implements WearableRepository {
     }
   }
 
-  void _beginConnectionOperation() {
+  int _beginConnectionOperation() {
     if (_connectionOperation) {
       throw StateError('A wearable connection operation is already active');
     }
     _connectionOperation = true;
+    _operationCancelled = Completer<void>();
+    return ++_connectionGeneration;
+  }
+
+  bool _operationIsActive(int generation) =>
+      !_disposed &&
+      generation == _connectionGeneration &&
+      _operationCancelled?.isCompleted == false;
+
+  void _checkOperation(int generation) {
+    if (!_operationIsActive(generation)) throw const _ConnectionCancelled();
+  }
+
+  Future<T> _duringOperation<T>(Future<T> operation, int generation) async {
+    if (!_operationIsActive(generation)) {
+      // The caller may already have started an asynchronous operation. Always
+      // observe its error even when cancellation won before this await.
+      unawaited(operation.then<void>((_) {}, onError: (Object _) {}));
+      throw const _ConnectionCancelled();
+    }
+    final result = await Future.any<T>([
+      operation,
+      _operationCancelled!.future.then<T>(
+        (_) => throw const _ConnectionCancelled(),
+      ),
+    ]);
+    _checkOperation(generation);
+    return result;
+  }
+
+  void _finishConnectionOperation(int generation) {
+    if (generation != _connectionGeneration) return;
+    _connectionOperation = false;
+    _operationCancelled = null;
+  }
+
+  Future<ProtocolEnvelope> _openAndReceiveHello(
+    WearableDevice device,
+    int generation,
+  ) async {
+    final hello = _nextMessage(ProtocolMessageType.hello);
+    await _duringOperation(
+      Future.wait<void>([
+        _transport.connect(device.webSocketUri),
+        hello.then<void>((_) {}),
+      ], eagerError: true),
+      generation,
+    );
+    return hello;
+  }
+
+  Future<ProtocolEnvelope> _sendAndReceive(
+    ProtocolEnvelope request,
+    Future<ProtocolEnvelope> response,
+  ) async {
+    await Future.wait<void>([
+      _transport
+          .send(request, requireAcknowledgement: false)
+          .then<void>((_) {}),
+      response.then<void>((_) {}),
+    ], eagerError: true);
+    return response;
   }
 
   void _reportFailure(
@@ -1014,9 +1227,7 @@ class WebSocketWearableRepository implements WearableRepository {
   @override
   Future<void> dispose() async {
     if (_disposed) return;
-    _intentionalDisconnect = true;
-    await _discoveryService.stop();
-    await _transport.disconnect(reason: 'repository_dispose');
+    await disconnect();
     _disposed = true;
     await _messageSubscription.cancel();
     await _statusSubscription.cancel();
@@ -1024,4 +1235,8 @@ class WebSocketWearableRepository implements WearableRepository {
     await _stateController.close();
     await _eventController.close();
   }
+}
+
+class _ConnectionCancelled implements Exception {
+  const _ConnectionCancelled();
 }

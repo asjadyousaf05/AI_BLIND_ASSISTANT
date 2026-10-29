@@ -10,7 +10,7 @@ Environment variables (see .env.example):
   GEMINI_MODEL      - Gemini model (default: gemini-3.6-flash)
   OLLAMA_BASE_URL   - Ollama API URL (default: http://localhost:11434)
   OLLAMA_MODEL      - Model name (default: llama3.2:3b)
-  WHISPER_MODEL     - Whisper model size (default: base)
+  WHISPER_MODEL     - Whisper model size (default: medium)
   DB_PATH           - SQLite database path (default: ./data/assistant.db)
   PAIRING_CODE_TTL  - Seconds a pairing code is valid (default: 300)
   TOKEN_TTL_DAYS    - Bearer token lifetime in days (default: 30)
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.2:3b"
 
     # Whisper transcription
-    whisper_model: str = "base"
+    whisper_model: str = "medium"
     whisper_language: str = "en"
     whisper_local_files_only: bool = True
 

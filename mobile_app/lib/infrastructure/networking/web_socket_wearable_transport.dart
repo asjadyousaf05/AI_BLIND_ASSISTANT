@@ -124,9 +124,12 @@ class WebSocketWearableTransport implements WearableTransport {
       throw StateError('A wearable connection attempt is already active');
     }
 
-    await _closeCurrentSocket(closeCode: 1000, reason: 'replace_connection');
     final generation = ++_generation;
     _setStatus(WearableTransportStatus.connecting);
+    await _closeCurrentSocket(closeCode: 1000, reason: 'replace_connection');
+    if (_disposed || generation != _generation) {
+      throw StateError('Wearable connection was superseded');
+    }
     final socket = _connector.connect(endpoint, timeout: connectTimeout);
     _socket = socket;
     _socketSubscription = socket.stream.listen(
@@ -149,7 +152,7 @@ class WebSocketWearableTransport implements WearableTransport {
     } on Object {
       if (generation == _generation) {
         _setStatus(WearableTransportStatus.error);
-        await _closeCurrentSocket(closeCode: 1001, reason: 'connect_failed');
+        await _closeCurrentSocket(closeCode: 4001, reason: 'connect_failed');
       }
       rethrow;
     }
@@ -272,7 +275,7 @@ class WebSocketWearableTransport implements WearableTransport {
       ProtocolMessageType.heartbeat,
       payload: {'kind': 'pong', 'replyTo': message.messageId},
     );
-    unawaited(send(pong, requireAcknowledgement: false));
+    unawaited(_sendHeartbeat(pong));
   }
 
   void _startHeartbeat(int generation) {
@@ -291,22 +294,37 @@ class WebSocketWearableTransport implements WearableTransport {
           TimeoutException('Wearable heartbeat became stale', staleTimeout),
         );
         unawaited(
-          _closeCurrentSocket(closeCode: 1001, reason: 'stale_connection'),
+          _closeCurrentSocket(closeCode: 4001, reason: 'stale_connection'),
         );
         return;
       }
+      // Enrollment and authentication have their own finite timeouts. Do not
+      // send an unauthenticated command while waiting for the handshake.
+      if (_signer == null) return;
       final ping = _messageFactory.create(
         ProtocolMessageType.heartbeat,
         payload: const {'kind': 'ping'},
       );
-      unawaited(send(ping, requireAcknowledgement: false));
+      unawaited(_sendHeartbeat(ping));
     });
+  }
+
+  Future<void> _sendHeartbeat(ProtocolEnvelope message) async {
+    if (_signer == null) return;
+    final generation = _generation;
+    try {
+      await send(message, requireAcknowledgement: false);
+    } on Object catch (error, stackTrace) {
+      if (!_disposed && generation == _generation) {
+        _handleSocketError(error, stackTrace, generation);
+      }
+    }
   }
 
   Future<void> _rejectUnauthenticatedConnection(int generation) async {
     if (generation != _generation) return;
     _setStatus(WearableTransportStatus.error);
-    await _closeCurrentSocket(closeCode: 1008, reason: 'authentication_failed');
+    await _closeCurrentSocket(closeCode: 4003, reason: 'authentication_failed');
   }
 
   void _handleSocketError(Object error, StackTrace stackTrace, int generation) {

@@ -25,14 +25,19 @@ class OnDeviceSpeechResult {
   final double? confidence;
 }
 
-enum HandsFreeSpeechEventType { wake, command, timeout, error }
+enum HandsFreeSpeechEventType { wake, command, readerCandidate, timeout, error }
 
 /// A bounded event from the foreground-only offline wake-word listener.
 class HandsFreeSpeechEvent {
-  const HandsFreeSpeechEvent({required this.type, this.transcript});
+  const HandsFreeSpeechEvent({
+    required this.type,
+    this.transcript,
+    this.candidateId,
+  });
 
   final HandsFreeSpeechEventType type;
   final String? transcript;
+  final String? candidateId;
 }
 
 /// Bounded push-to-talk speech recognition that must stay on the phone.

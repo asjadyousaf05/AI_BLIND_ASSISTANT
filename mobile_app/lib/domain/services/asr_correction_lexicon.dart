@@ -51,9 +51,10 @@ abstract final class AsrCorrectionLexicon {
     // Apply substring corrections for longer utterances.
     var corrected = text;
     for (final entry in corrections.entries) {
-      if (corrected.contains(entry.key)) {
-        corrected = corrected.replaceFirst(entry.key, entry.value);
-      }
+      corrected = corrected.replaceAll(
+        RegExp(r'\b' + RegExp.escape(entry.key) + r'\b'),
+        entry.value,
+      );
     }
     return corrected;
   }

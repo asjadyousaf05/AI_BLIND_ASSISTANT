@@ -2,12 +2,118 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ai_blind_assistant/domain/enums/voice_feature_context.dart';
 import 'package:ai_blind_assistant/domain/enums/voice_intent.dart';
 import 'package:ai_blind_assistant/domain/services/intelligent_intent_resolver.dart';
+import 'package:ai_blind_assistant/domain/services/asr_correction_lexicon.dart';
 
 void main() {
   late IntelligentIntentResolver resolver;
 
   setUp(() {
     resolver = IntelligentIntentResolver();
+  });
+
+  group('conservative recognition recovery', () {
+    for (final phrase in [
+      'do not stop detection',
+      "don't start mobile mode",
+      'never turn off camera',
+      'open [unk] settings',
+      'stop unk detection',
+    ]) {
+      test('asks again instead of guessing an action for "$phrase"', () {
+        expect(resolver.resolve(phrase).isUnrecognized, true);
+      });
+    }
+    test(
+      'known ASR repairs use whole words and keep unrelated speech intact',
+      () {
+        expect(
+          AsrCorrectionLexicon.correct('please paws reading'),
+          'please pause reading',
+        );
+        expect(
+          AsrCorrectionLexicon.correct('is this possible'),
+          'is this possible',
+        );
+        expect(AsrCorrectionLexicon.correct('skin document'), 'scan document');
+        expect(
+          AsrCorrectionLexicon.correct('my skin documents'),
+          'my skin documents',
+        );
+      },
+    );
+  });
+
+  group('screen commands and polite navigation', () {
+    for (final context in VoiceFeatureContext.values) {
+      test('navigation stays navigation in $context', () {
+        for (final phrase in [
+          'go back',
+          'can you please go back?',
+          'please go back',
+        ]) {
+          expect(
+            resolver.resolve(phrase, context: context).intent,
+            isA<NavigateBack>(),
+          );
+        }
+        expect(
+          resolver.resolve('go home', context: context).intent,
+          isA<NavigateHome>(),
+        );
+        expect(
+          resolver.resolve('open setting', context: context).intent,
+          isA<NavigateSettings>(),
+        );
+        expect(
+          resolver
+              .resolve('could you please open about page?', context: context)
+              .intent,
+          isA<NavigateSafety>(),
+        );
+      });
+    }
+    test('short feature verbs depend on the screen', () {
+      expect(
+        resolver
+            .resolve('pause it', context: VoiceFeatureContext.mobileDetection)
+            .intent,
+        isA<PauseMobileDetection>(),
+      );
+      expect(
+        resolver
+            .resolve('pause', context: VoiceFeatureContext.scannerReading)
+            .intent,
+        isA<ReadingPause>(),
+      );
+      expect(
+        resolver.resolve('pause', context: VoiceFeatureContext.wearable).intent,
+        isA<PauseWearable>(),
+      );
+      for (final context in [
+        VoiceFeatureContext.settings,
+        VoiceFeatureContext.home,
+        VoiceFeatureContext.smartAi,
+      ]) {
+        expect(
+          resolver.resolve('pause', context: context).isUnrecognized,
+          true,
+        );
+        expect(
+          resolver.resolve('resume', context: context).isUnrecognized,
+          true,
+        );
+      }
+    });
+    test(
+      'listen Vision AI accepts a wake and a combined polite navigation',
+      () {
+        expect(resolver.resolve('listen vision ai').intent, isA<Greeting>());
+        expect(
+          resolver.resolve('listen vision ai, can you please go back?').intent,
+          isA<NavigateBack>(),
+        );
+      },
+    );
   });
 
   group('IntelligentIntentResolver - Mobile Detection Intents', () {
@@ -452,10 +558,74 @@ void main() {
         },
       );
 
-      test('recognizes common ASR spelling for leaving Smart AI', () {
-        expect(resolver.resolve('bye').intent, isA<DismissAssistant>());
-        expect(resolver.resolve('by').intent, isA<DismissAssistant>());
-        expect(resolver.resolve('good bye').intent, isA<DismissAssistant>());
+      test(
+        'requires complete explicit session-exit phrases in every context',
+        () {
+          for (final context in VoiceFeatureContext.values) {
+            for (final phrase in [
+              'bye',
+              'by',
+              'buy',
+              'goodbyes',
+              'nearby',
+              'a book by an author',
+              'I want to buy a book',
+              'tell a story ending with goodbye',
+              'do not stop listening',
+              'please explain what stop listening means',
+            ]) {
+              expect(
+                resolver.resolve(phrase, context: context).intent,
+                isNot(isA<DismissAssistant>()),
+                reason: '$context: $phrase',
+              );
+            }
+            for (final phrase in [
+              'goodbye',
+              'good bye',
+              'goodbye.',
+              'stop listening',
+              'please stop listening',
+              'end voice session',
+              'exit smart ai',
+              'close smart ai',
+              'bye vision ai',
+            ]) {
+              expect(
+                resolver.resolve(phrase, context: context).intent,
+                isA<DismissAssistant>(),
+                reason: '$context: $phrase',
+              );
+            }
+          }
+        },
+      );
+
+      test('scanner restart and rescan phrases request a fresh page', () {
+        for (final context in [
+          VoiceFeatureContext.scannerCapture,
+          VoiceFeatureContext.scannerReading,
+        ]) {
+          for (final phrase in [
+            'restart scanner',
+            'restart the scanner',
+            'restart document scanner',
+            'scan again',
+            'scan document again',
+            'rescan document',
+            'please restart scanner',
+          ]) {
+            expect(
+              resolver.resolve(phrase, context: context).intent,
+              isA<RescanDocument>(),
+              reason: '$context: $phrase',
+            );
+          }
+          expect(
+            resolver.resolve('restart reading', context: context).intent,
+            isA<ReadingRestart>(),
+          );
+        }
       });
     },
   );

@@ -55,6 +55,8 @@ from src.ai_assistant.tools.local_commands import match_local_command
         ("start scan", "trigger_ocr_scan", {}, False),
         ("open scanner", "navigate_to_screen", {"screen": "ocr_scanner"}, False),
         ("scan again", "ocr_rescan", {}, False),
+        ("restart scanner", "ocr_rescan", {}, False),
+        ("restart the scanner", "ocr_rescan", {}, False),
         ("read again", "ocr_read_again", {}, False),
         ("stop speaking", "stop_speaking", {}, False),
         ("bye vision ai", "dismiss_assistant", {}, False),
@@ -81,3 +83,42 @@ def test_general_conversation_is_left_for_ai_provider():
 
 def test_ambiguous_application_phrase_does_not_trigger_wearable():
     assert match_local_command("start the application") is None
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "buy",
+        "bye",
+        "by",
+        "nearby",
+        "standby",
+        "I want to buy a book",
+        "tell me a story that ends with goodbye",
+        "do not stop listening",
+        "please explain what stop listening means",
+    ],
+)
+def test_incidental_words_never_dismiss_the_assistant(phrase):
+    result = match_local_command(phrase)
+    assert result is None or result.tool_call["name"] != "dismiss_assistant"
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "goodbye",
+        "good bye",
+        "goodbye.",
+        "stop listening",
+        "please stop listening",
+        "exit smart ai",
+        "close smart ai",
+        "end voice session",
+        "bye vision ai",
+    ],
+)
+def test_session_exit_requires_an_explicit_complete_request(phrase):
+    result = match_local_command(phrase)
+    assert result is not None
+    assert result.tool_call["name"] == "dismiss_assistant"

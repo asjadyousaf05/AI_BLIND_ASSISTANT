@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../app/router/app_route.dart';
 import '../../app/router/route_paths.dart';
 import '../../app/theme/app_icons.dart';
 
@@ -30,12 +29,12 @@ class AppBottomNavigation extends StatelessWidget {
       routePath: RoutePaths.home,
     ),
     AppBottomNavigationItem(
-      label: 'Mode',
+      label: 'Modes',
       icon: AppIcons.mode,
       routePath: RoutePaths.modeSelection,
     ),
     AppBottomNavigationItem(
-      label: 'Cap',
+      label: 'Wearable',
       icon: AppIcons.bluetooth,
       routePath: RoutePaths.raspberryPi,
     ),
@@ -87,7 +86,9 @@ class AppBottomNavigation extends StatelessWidget {
           NavigationDestination(
             icon: Icon(item.icon),
             label: item.label,
-            tooltip: item.label == 'Cap' ? AppRoute.raspberryPi.title : null,
+            tooltip: item.routePath == RoutePaths.raspberryPi
+                ? 'Raspberry Pi wearable mode'
+                : item.label,
           ),
       ],
     );

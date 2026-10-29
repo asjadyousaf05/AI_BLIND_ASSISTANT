@@ -61,7 +61,7 @@ class AuthenticatedEnvelopeSigner {
       envelope.protocolVersion.toString(),
       envelope.type.wireName,
       envelope.messageId,
-      envelope.timestamp.toUtc().toIso8601String(),
+      envelope.timestampText,
       envelope.sequence.toString(),
       _canonicalJson(envelope.payload),
     ];

@@ -123,6 +123,7 @@ class AccessibleTextPlayer {
           'scanner:${_document.id}:$generation:sent:$_currentIndex';
       final completer = Completer<void>();
       _activeSentenceCompleter = completer;
+      var sentenceFailed = false;
 
       echoGuard.onTtsStart(
         utteranceId: utteranceId,
@@ -131,55 +132,67 @@ class AccessibleTextPlayer {
         generation: generation,
       );
 
-      await speechService.speakSentence(
-        utteranceId,
-        sent.text,
-        onStart: () {
-          VoiceDiagnosticLogger.readerTtsCallback(
-            event: 'onStart',
-            generation: generation,
-            currentGeneration: _playGeneration,
-            sentenceIndex: _currentIndex,
-          );
-          if (_playGeneration != generation || _disposed) return;
-          _notifyState();
-        },
-        onProgress: (start, end, word) {
-          if (_playGeneration != generation || _disposed) return;
-          _currentRangeStart = start;
-          _currentRangeEnd = end;
-          _currentWord = sent.wordAtSentenceOffset(start);
-          echoGuard.onTtsRange(
-            utteranceId: utteranceId,
-            rangeStart: start,
-            rangeEnd: end,
-            word: word,
-            generation: generation,
-          );
-          _notifyState();
-        },
-        onDone: () {
-          VoiceDiagnosticLogger.readerTtsCallback(
-            event: 'onDone',
-            generation: generation,
-            currentGeneration: _playGeneration,
-            sentenceIndex: _currentIndex,
-          );
-          if (!completer.isCompleted) completer.complete();
-        },
-        onError: (error) {
-          VoiceDiagnosticLogger.readerTtsCallback(
-            event: 'onError',
-            generation: generation,
-            currentGeneration: _playGeneration,
-            sentenceIndex: _currentIndex,
-          );
-          if (!completer.isCompleted) completer.complete();
-        },
-      );
+      await speechService
+          .speakSentence(
+            utteranceId,
+            sent.text,
+            onStart: () {
+              VoiceDiagnosticLogger.readerTtsCallback(
+                event: 'onStart',
+                generation: generation,
+                currentGeneration: _playGeneration,
+                sentenceIndex: _currentIndex,
+              );
+              if (_playGeneration != generation || _disposed) return;
+              _notifyState();
+            },
+            onProgress: (start, end, word) {
+              if (_playGeneration != generation || _disposed) return;
+              _currentRangeStart = start;
+              _currentRangeEnd = end;
+              _currentWord = sent.wordAtSentenceOffset(start);
+              echoGuard.onTtsRange(
+                utteranceId: utteranceId,
+                rangeStart: start,
+                rangeEnd: end,
+                word: word,
+                generation: generation,
+              );
+              _notifyState();
+            },
+            onDone: () {
+              VoiceDiagnosticLogger.readerTtsCallback(
+                event: 'onDone',
+                generation: generation,
+                currentGeneration: _playGeneration,
+                sentenceIndex: _currentIndex,
+              );
+              if (!completer.isCompleted) completer.complete();
+            },
+            onError: (error) {
+              VoiceDiagnosticLogger.readerTtsCallback(
+                event: 'onError',
+                generation: generation,
+                currentGeneration: _playGeneration,
+                sentenceIndex: _currentIndex,
+              );
+              sentenceFailed = true;
+              if (!completer.isCompleted) completer.complete();
+            },
+          )
+          .catchError((Object _) {
+            sentenceFailed = true;
+            if (!completer.isCompleted) completer.complete();
+          });
 
       // Await sentence completion or early interruption
       await completer.future;
+      if (sentenceFailed && _playGeneration == generation && !_disposed) {
+        _status = PlaybackStatus.error;
+        echoGuard.onTtsStop();
+        _notifyState();
+        break;
+      }
       if (_playGeneration != generation ||
           _status != PlaybackStatus.playing ||
           _disposed) {
@@ -341,8 +354,17 @@ class AccessibleTextPlayer {
 
   /// Changes the reading speed profile and adjusts TTS rate dynamically.
   Future<void> setProfile(ReadingProfile profile) async {
+    final generation = _playGeneration;
+    final wasPlaying = isPlaying;
     _profile = profile;
     await _applyProfileRate();
+    if (_disposed || _playGeneration != generation) return;
+    if (wasPlaying && isPlaying) {
+      // Android applies rate changes to the next utterance. Restart this line
+      // immediately at the new speed rather than waiting through a long page.
+      unawaited(repeat());
+      return;
+    }
     _notifyState();
   }
 
@@ -352,6 +374,8 @@ class AccessibleTextPlayer {
     if (sent == null || _disposed) return;
     _playGeneration++;
     final generation = _playGeneration;
+    _completeActiveSentence();
+    echoGuard.onTtsStop();
     _status = PlaybackStatus.playing;
     _notifyState();
     await speechService.stop();
@@ -371,16 +395,32 @@ class AccessibleTextPlayer {
       generation: generation,
     );
 
-    await speechService.speakSentence(
-      utteranceId,
-      spelled,
-      onDone: () {
-        if (_playGeneration != generation || _disposed) return;
-        _status = PlaybackStatus.paused;
-        echoGuard.onTtsDone(utteranceId: utteranceId, generation: generation);
-        _notifyState();
-      },
-    );
+    await speechService
+        .speakSentence(
+          utteranceId,
+          spelled,
+          onDone: () {
+            if (_playGeneration != generation || _disposed) return;
+            _status = PlaybackStatus.paused;
+            echoGuard.onTtsDone(
+              utteranceId: utteranceId,
+              generation: generation,
+            );
+            _notifyState();
+          },
+          onError: (_) {
+            if (_playGeneration != generation || _disposed) return;
+            _status = PlaybackStatus.error;
+            echoGuard.onTtsStop();
+            _notifyState();
+          },
+        )
+        .catchError((Object _) {
+          if (_playGeneration != generation || _disposed) return;
+          _status = PlaybackStatus.error;
+          echoGuard.onTtsStop();
+          _notifyState();
+        });
   }
 
   Future<void> _applyProfileRate() async {

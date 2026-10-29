@@ -7,6 +7,7 @@ import '../domain/enums/assistant_audio_state.dart';
 import '../domain/repositories/assistant_credential_repository.dart';
 import '../domain/repositories/assistant_repository.dart';
 import '../domain/services/audio_recorder_service.dart';
+import '../domain/services/battery_status_service.dart';
 import '../domain/services/microphone_permission_service.dart';
 import '../domain/services/on_device_speech_recognition_service.dart';
 import '../domain/services/speech_output_service.dart';
@@ -17,6 +18,28 @@ import '../infrastructure/assistant/android_on_device_speech_recognition_service
 import '../infrastructure/assistant/flutter_tts_speech_output_service.dart';
 import '../infrastructure/assistant/http_assistant_repository.dart';
 import '../infrastructure/assistant/secure_assistant_credential_repository.dart';
+import '../infrastructure/device/android_battery_status_service.dart';
+import '../domain/repositories/gemini_configuration_repository.dart';
+import '../domain/services/gemini_conversation_service.dart';
+import '../infrastructure/assistant/secure_gemini_configuration_repository.dart';
+import '../infrastructure/assistant/http_gemini_conversation_service.dart';
+
+final geminiConfigurationRepositoryProvider =
+    Provider<GeminiConfigurationRepository>(
+      (_) => SecureGeminiConfigurationRepository(),
+    );
+
+final geminiConversationServiceProvider = Provider<GeminiConversationService>((
+  ref,
+) {
+  final service = HttpGeminiConversationService();
+  ref.onDispose(service.close);
+  return service;
+});
+
+final batteryStatusServiceProvider = Provider<BatteryStatusService>((_) {
+  return const AndroidBatteryStatusService();
+});
 
 /// Microphone permission service provider.
 final microphonePermissionServiceProvider =
@@ -60,8 +83,10 @@ final assistantCredentialRepositoryProvider =
     });
 
 /// HTTP assistant repository provider.
-final assistantRepositoryProvider = Provider<AssistantRepository>((_) {
-  return HttpAssistantRepository();
+final assistantRepositoryProvider = Provider<AssistantRepository>((ref) {
+  final repository = HttpAssistantRepository();
+  ref.onDispose(repository.close);
+  return repository;
 });
 
 /// Shared TTS echo guard tracking live speech ranges.

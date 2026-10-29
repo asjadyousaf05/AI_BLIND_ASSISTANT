@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from configparser import ConfigParser
 from pathlib import Path
 
@@ -38,3 +40,26 @@ def test_default_deployment_uses_dynamic_private_address_not_a_wildcard() -> Non
     assert "AIBA_BIND_HOST=auto" in environment
     assert "AIBA_BIND_HOST=0.0.0.0" not in environment
     assert "AIBA_ALLOW_FIRST_CLIENT_ENROLLMENT=true" in environment
+
+
+def test_hotspot_link_restores_service_without_exhausting_restart_limit(tmp_path: Path) -> None:
+    hook = ROOT / "scripts" / "hotspot_network_dispatcher.sh"
+    installer = (ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+    assert "90-ai-blind-assistant-hotspot" in installer
+    assert "hotspot_network_dispatcher.sh" in installer
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    fake_systemctl = bin_dir / "systemctl"
+    fake_systemctl.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\n')
+    fake_systemctl.chmod(0o755)
+    env = {**os.environ, "PATH": str(bin_dir), "CALLS": str(calls)}
+
+    subprocess.run(["/bin/sh", str(hook), "eth0", "up"], env=env, check=True)
+    assert not calls.exists()
+    subprocess.run(["/bin/sh", str(hook), "wlan0", "up"], env=env, check=True)
+    assert calls.read_text().splitlines() == [
+        "reset-failed ai-blind-assistant-pi.service",
+        "--no-block restart ai-blind-assistant-pi.service",
+    ]

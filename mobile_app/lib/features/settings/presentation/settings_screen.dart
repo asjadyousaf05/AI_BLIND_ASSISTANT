@@ -51,6 +51,7 @@ class SettingsScreen extends ConsumerWidget {
               value: FeedbackMode.audio,
               groupValue: settings.feedbackSettings.mode,
               title: FeedbackMode.audio.label,
+              semanticLabel: 'Use audio alerts',
               icon: AppIcons.volume,
               onChanged: controller.selectFeedbackMode,
             ),
@@ -59,6 +60,7 @@ class SettingsScreen extends ConsumerWidget {
               value: FeedbackMode.vibration,
               groupValue: settings.feedbackSettings.mode,
               title: FeedbackMode.vibration.label,
+              semanticLabel: 'Use vibration alerts',
               icon: AppIcons.vibration,
               onChanged: controller.selectFeedbackMode,
             ),
@@ -67,6 +69,7 @@ class SettingsScreen extends ConsumerWidget {
               value: FeedbackMode.audioAndVibration,
               groupValue: settings.feedbackSettings.mode,
               title: FeedbackMode.audioAndVibration.label,
+              semanticLabel: 'Use audio and vibration alerts',
               icon: AppIcons.notifications,
               onChanged: controller.selectFeedbackMode,
             ),
@@ -85,6 +88,7 @@ class SettingsScreen extends ConsumerWidget {
               value: DetectionSensitivity.low,
               groupValue: settings.detectionSettings.sensitivity,
               title: DetectionSensitivity.low.label,
+              semanticLabel: 'Set low detection sensitivity',
               icon: AppIcons.visibility,
               onChanged: controller.selectDetectionSensitivity,
             ),
@@ -93,6 +97,7 @@ class SettingsScreen extends ConsumerWidget {
               value: DetectionSensitivity.medium,
               groupValue: settings.detectionSettings.sensitivity,
               title: DetectionSensitivity.medium.label,
+              semanticLabel: 'Set medium detection sensitivity',
               icon: AppIcons.selected,
               onChanged: controller.selectDetectionSensitivity,
             ),
@@ -101,6 +106,7 @@ class SettingsScreen extends ConsumerWidget {
               value: DetectionSensitivity.high,
               groupValue: settings.detectionSettings.sensitivity,
               title: DetectionSensitivity.high.label,
+              semanticLabel: 'Set high detection sensitivity',
               icon: AppIcons.warning,
               onChanged: controller.selectDetectionSensitivity,
             ),
@@ -113,8 +119,7 @@ class SettingsScreen extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.space3),
         SwitchListTile(
-          title: const Text('Vibration enabled'),
-          subtitle: Text(settings.vibrationEnabled ? 'On' : 'Off'),
+          title: const Text('Vibration alerts'),
           value: settings.vibrationEnabled,
           onChanged: (value) => controller.setVibrationEnabled(value),
         ),
@@ -127,16 +132,23 @@ class SettingsScreen extends ConsumerWidget {
         Row(
           children: [
             Expanded(
-              child: Slider(
-                value: settings.feedbackSettings.announcementCooldownSeconds
-                    .toDouble(),
-                min: 1,
-                max: 30,
-                divisions: 29,
-                label:
-                    '${settings.feedbackSettings.announcementCooldownSeconds}s',
-                onChanged: (value) =>
-                    controller.setAnnouncementCooldown(value.round()),
+              child: MergeSemantics(
+                child: Semantics(
+                  label: 'Announcement cooldown',
+                  child: Slider(
+                    value: settings.feedbackSettings.announcementCooldownSeconds
+                        .toDouble(),
+                    min: 1,
+                    max: 30,
+                    divisions: 29,
+                    label:
+                        '${settings.feedbackSettings.announcementCooldownSeconds}s',
+                    onChanged: (value) =>
+                        controller.setAnnouncementCooldown(value.round()),
+                    semanticFormatterCallback: (value) =>
+                        '${value.round()} seconds between repeated alerts',
+                  ),
+                ),
               ),
             ),
             SizedBox(
@@ -182,6 +194,7 @@ class SettingsScreen extends ConsumerWidget {
           child: SecondaryActionButton(
             key: AppKeys.settingsCancelButton,
             label: 'Back',
+            semanticLabel: 'Go back from settings',
             onPressed: () => Navigator.of(context).maybePop(),
           ),
         ),

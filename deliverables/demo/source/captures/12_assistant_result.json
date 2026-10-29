@@ -1,0 +1,142 @@
+[
+  {
+    "label": "Smart AI Assistant",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Go back from Smart AI Assistant",
+    "bounds": [
+      8,
+      56,
+      104,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Smart AI Assistant",
+    "bounds": [
+      144,
+      78,
+      384,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Open Vision AI settings",
+    "bounds": [
+      416,
+      56,
+      512,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Connect to the laptop assistant",
+    "bounds": [
+      512,
+      56,
+      608,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Close Vision AI assistant",
+    "bounds": [
+      608,
+      56,
+      704,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Offline voice and typed app controls are ready on this phone. Connect the optional laptop only for general conversation.\nConnect to the laptop assistant",
+    "bounds": [
+      48,
+      164,
+      672,
+      368
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Assistant: Battery level is 100 percent.\nBattery level is 100 percent.",
+    "bounds": [
+      48,
+      392,
+      672,
+      480
+    ],
+    "clickable": false
+  },
+  {
+    "label": "You said: \"battery status\"",
+    "bounds": [
+      48,
+      504,
+      672,
+      536
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Speak to Vision AI, Tap once to speak your question or command. Or hold to speak.",
+    "bounds": [
+      216,
+      592,
+      504,
+      880
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Repeat the last assistant response",
+    "bounds": [
+      102,
+      912,
+      332,
+      1008
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Hide text input",
+    "bounds": [
+      356,
+      912,
+      618,
+      1008
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Send typed question or command",
+    "bounds": [
+      576,
+      1052,
+      672,
+      1148
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Important\nImportant\nThe personal assistant does not replace a white cane, guide dog, or professional assistance.\nDetection alerts take priority over conversation.\nOffline app-control speech is recognized and executed on this phone. If Gemini is configured, only unmatched general-conversation text may be processed by Google. Camera frames and raw audio are never sent.",
+    "bounds": [
+      48,
+      1196,
+      672,
+      1552
+    ],
+    "clickable": false
+  }
+]

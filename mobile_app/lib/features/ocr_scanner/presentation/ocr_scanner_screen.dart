@@ -58,14 +58,22 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
   String? _recognisedText;
   String? _errorMessage;
   bool _isSpeaking = false;
+  bool _readerError = false;
   Completer<void>? _cameraInitCompleter;
   bool _isInitializingCamera = false;
+  bool _resumeCameraAfterInitialization = false;
+  bool _isCapturing = false;
+  int _cameraGeneration = 0;
+  int _captureGeneration = 0;
 
   final _framingAnalyzer = const DocumentFramingAnalyzer();
   DateTime _lastFramingTime = DateTime(2000);
   FramingCue _currentFramingCue = FramingCue.noDocument;
   FramingCue _lastSpokenCue = FramingCue.noDocument;
   bool _isTorchOn = false;
+  bool _manualTorchChoice = false;
+  bool _autoTorchFailed = false;
+  bool _torchOperationInProgress = false;
   late final SpeechOutputService _speechService;
   late final VisionVoiceKernelV3 _voiceKernel;
   AccessibleTextPlayer? _textPlayer;
@@ -94,6 +102,7 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
         if (!mounted) return;
         final currentStatus = _textPlayer?.status;
         if (currentStatus == PlaybackStatus.playing) {
+          _readerError = false;
           _voiceKernel.setFeatureContext(VoiceFeatureContext.scannerReading);
           ref.read(assistantAudioStateProvider.notifier).state =
               AssistantAudioState.scannerReading;
@@ -101,6 +110,12 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
           _voiceKernel.setFeatureContext(VoiceFeatureContext.scannerReading);
           ref.read(assistantAudioStateProvider.notifier).state =
               AssistantAudioState.scannerPaused;
+        } else if (currentStatus == PlaybackStatus.error) {
+          _readerError = true;
+          _voiceKernel.setFeatureContext(VoiceFeatureContext.scannerReading);
+          ref.read(assistantAudioStateProvider.notifier).state =
+              AssistantAudioState.scannerPaused;
+          _announce('Reading aloud failed. Check speech output and try again.');
         } else if (currentStatus == PlaybackStatus.completed ||
             currentStatus == PlaybackStatus.idle) {
           final hasReadableDocument =
@@ -120,13 +135,16 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) setState(() {});
         });
+        _voiceKernel.setReaderPlaybackActive(
+          currentStatus == PlaybackStatus.playing,
+        );
       },
     );
 
     _scanLaserController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
-    )..repeat(reverse: true);
+    );
     _scanLaserAnimation = CurvedAnimation(
       parent: _scanLaserController,
       curve: Curves.easeInOut,
@@ -146,6 +164,9 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
 
   @override
   void dispose() {
+    _voiceKernel.setReaderPlaybackActive(false);
+    _cameraGeneration++;
+    _captureGeneration++;
     WidgetsBinding.instance.removeObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _voiceKernel.setFeatureContext(VoiceFeatureContext.unknown);
@@ -165,25 +186,39 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      return;
-    }
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
-      _cameraController?.dispose();
+      _resumeCameraAfterInitialization = false;
+      _cameraGeneration++;
+      _captureGeneration++;
+      final controller = _cameraController;
       _cameraController = null;
-      if (mounted) setState(() => _state = _OcrState.idle);
+      unawaited(controller?.dispose());
+      unawaited(_stopSpeaking());
+      if (mounted && _state != _OcrState.result) {
+        setState(() => _state = _OcrState.idle);
+      }
     } else if (state == AppLifecycleState.resumed) {
-      unawaited(_initCamera(cameraIndex: _selectedCameraIndex));
+      if (_state != _OcrState.result) {
+        if (_isInitializingCamera) {
+          _resumeCameraAfterInitialization = true;
+        } else {
+          unawaited(_initCamera(cameraIndex: _selectedCameraIndex));
+        }
+      }
     }
   }
 
   Future<void> _initCamera({int cameraIndex = 0}) async {
     if (_isInitializingCamera) return;
     _isInitializingCamera = true;
-    _cameraInitCompleter = Completer<void>();
+    final generation = ++_cameraGeneration;
+    final ready = Completer<void>();
+    _cameraInitCompleter = ready;
+    CameraController? candidate;
     try {
       _availableCameras = await availableCameras();
+      if (!mounted || generation != _cameraGeneration) return;
       if (_availableCameras.isEmpty) {
         _setError('No camera is available on this device.');
         return;
@@ -192,55 +227,95 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
       _selectedCameraIndex = cameraIndex.clamp(0, _availableCameras.length - 1);
       final targetCamera = _availableCameras[_selectedCameraIndex];
 
-      final controller = CameraController(
+      candidate = CameraController(
         targetCamera,
         ResolutionPreset.high,
         enableAudio: false,
       );
-      await controller.initialize();
-      if (!mounted) return;
+      await candidate.initialize();
+      if (!mounted || generation != _cameraGeneration) return;
 
       setState(() {
-        _cameraController = controller;
+        _cameraController = candidate;
         _state = _OcrState.cameraReady;
         _isTorchOn = false;
+        _manualTorchChoice = false;
+        _autoTorchFailed = false;
       });
-      _cameraInitCompleter?.complete();
+      _scanLaserController.repeat(reverse: true);
+      final activeController = candidate;
+      candidate = null;
       _announce('Scanner ready.');
       try {
-        await controller.startImageStream(_handleFramingStream);
+        await activeController.startImageStream(_handleFramingStream);
       } catch (_) {}
-    } catch (e) {
-      _cameraInitCompleter?.completeError(e);
-      _setError('Camera failed to start: $e');
+    } on CameraException catch (error) {
+      if (generation == _cameraGeneration) {
+        _setError(
+          error.code.contains('AccessDenied')
+              ? 'Camera access is required. Allow it in Android settings, then restart the scanner.'
+              : 'Camera could not start. Close other camera apps and try again.',
+        );
+      }
+    } catch (_) {
+      if (generation == _cameraGeneration) {
+        _setError('Camera could not start. Please try again.');
+      }
     } finally {
+      await candidate?.dispose();
+      if (!ready.isCompleted) ready.complete();
+      if (identical(_cameraInitCompleter, ready)) _cameraInitCompleter = null;
       _isInitializingCamera = false;
+      if (_resumeCameraAfterInitialization &&
+          mounted &&
+          _state != _OcrState.result) {
+        _resumeCameraAfterInitialization = false;
+        unawaited(_initCamera(cameraIndex: _selectedCameraIndex));
+      }
     }
   }
 
   Future<void> _switchCamera() async {
-    if (_availableCameras.length < 2) return;
+    if (_availableCameras.length < 2 || _isInitializingCamera || _isCapturing) {
+      return;
+    }
     final nextIndex = (_selectedCameraIndex + 1) % _availableCameras.length;
-    await _cameraController?.dispose();
+    _cameraGeneration++;
+    final oldController = _cameraController;
     _cameraController = null;
     setState(() => _state = _OcrState.idle);
+    await oldController?.dispose();
     await _initCamera(cameraIndex: nextIndex);
-    _announce('Camera switched.');
+    if (mounted && _state == _OcrState.cameraReady) {
+      _announce('Camera switched.');
+    }
   }
 
   Future<void> _toggleTorch() async {
     await _setTorchEnabled(!_isTorchOn);
   }
 
-  Future<void> _setTorchEnabled(bool enabled) async {
+  Future<void> _setTorchEnabled(bool enabled, {bool manual = true}) async {
+    if (manual) _manualTorchChoice = true;
+    if (_torchOperationInProgress) return;
     final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
+    if (controller == null || !controller.value.isInitialized) {
+      _announce('Camera is not ready.');
+      return;
+    }
+    _torchOperationInProgress = true;
     try {
       await controller.setFlashMode(enabled ? FlashMode.torch : FlashMode.off);
+      if (!mounted || !identical(controller, _cameraController)) return;
       setState(() => _isTorchOn = enabled);
       HapticFeedback.lightImpact();
       _announce(enabled ? 'Flashlight on.' : 'Flashlight off.');
-    } catch (_) {}
+    } catch (_) {
+      if (!manual) _autoTorchFailed = true;
+      _announce('Flashlight is unavailable on this camera.');
+    } finally {
+      _torchOperationInProgress = false;
+    }
   }
 
   void _handleFramingStream(CameraImage image) {
@@ -255,6 +330,8 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
       yBytes,
       width: image.width,
       height: image.height,
+      bytesPerRow: image.planes[0].bytesPerRow,
+      pixelStride: image.planes[0].bytesPerPixel ?? 1,
     );
 
     if (mounted && _currentFramingCue != cue) {
@@ -262,11 +339,12 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
     }
 
     // Auto-torch on low light in scanner: enable once if too dark, and keep on.
-    if (cue == FramingCue.tooDark && !_isTorchOn) {
-      _isTorchOn = true;
-      _cameraController?.setFlashMode(FlashMode.torch).catchError((_) {});
-      _announce('Low light detected. Flashlight on.');
-      if (mounted) setState(() {});
+    if (cue == FramingCue.tooDark &&
+        !_isTorchOn &&
+        !_manualTorchChoice &&
+        !_autoTorchFailed &&
+        !_torchOperationInProgress) {
+      unawaited(_setTorchEnabled(true, manual: false));
     }
 
     if (cue != _lastSpokenCue && cue != FramingCue.noDocument) {
@@ -279,57 +357,60 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
   }
 
   Future<void> _captureAndRecognise() async {
+    if (_isCapturing) return;
+    _isCapturing = true;
+    final generation = ++_captureGeneration;
     final requestId = 'scan_${DateTime.now().millisecondsSinceEpoch}';
     VoiceDiagnosticLogger.scanAccepted(requestId);
-
-    await _stopSpeaking();
-    HapticFeedback.heavyImpact();
-    if (_isInitializingCamera) {
-      try {
-        await _cameraInitCompleter?.future;
-      } catch (_) {}
-    }
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      await _initCamera(cameraIndex: _selectedCameraIndex);
-    }
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) {
-      _setError('Camera is still starting. Please try again.');
-      return;
-    }
-    if (_state == _OcrState.capturing || _state == _OcrState.processing) {
-      return;
-    }
-    setState(() {
-      _state = _OcrState.capturing;
-      _recognisedText = null;
-      _errorMessage = null;
-    });
-    _announce('Scanning.');
-
     File? tempFile;
     try {
+      await _stopSpeaking();
+      HapticFeedback.heavyImpact();
+      if (_isInitializingCamera) await _cameraInitCompleter?.future;
+      if (!mounted || generation != _captureGeneration) return;
+      if (_cameraController == null ||
+          !_cameraController!.value.isInitialized) {
+        await _initCamera(cameraIndex: _selectedCameraIndex);
+      }
+      if (!mounted || generation != _captureGeneration) return;
+      final controller = _cameraController;
+      if (controller == null || !controller.value.isInitialized) {
+        _setError('Camera is not ready. Please restart the scanner.');
+        return;
+      }
+      _textPlayer?.load('');
+      _voiceKernel.setFeatureContext(VoiceFeatureContext.scannerCapture);
+      ref.read(assistantAudioStateProvider.notifier).state =
+          AssistantAudioState.scannerReady;
+      setState(() {
+        _state = _OcrState.capturing;
+        _recognisedText = null;
+        _errorMessage = null;
+      });
+      _scanLaserController.stop();
+      _announce('Scanning.');
       if (controller.value.isStreamingImages) {
         try {
           await controller.stopImageStream();
         } catch (_) {}
       }
       final xFile = await controller.takePicture();
-      if (!mounted) return;
-      setState(() => _state = _OcrState.processing);
-
       tempFile = File(xFile.path);
-
+      if (!mounted || generation != _captureGeneration) return;
+      setState(() => _state = _OcrState.processing);
       final ocrService = ref.read(ocrServiceProvider);
       final text = await ocrService.recogniseText(xFile.path);
-
-      // Delete image immediately after recognition — privacy guarantee.
+      // Camera plugin stills are temporary; remove them before any playback.
       try {
         await tempFile.delete();
-      } catch (_) {}
-      tempFile = null;
-
-      if (!mounted) return;
+        tempFile = null;
+      } catch (_) {
+        if (mounted && generation == _captureGeneration) {
+          _setError('The temporary photo could not be removed. Please retry.');
+        }
+        return;
+      }
+      if (!mounted || generation != _captureGeneration) return;
       if (text.trim().isEmpty) {
         setState(() {
           _state = _OcrState.result;
@@ -342,20 +423,26 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
           _state = _OcrState.result;
           _recognisedText = text;
         });
-        await _speakResult(text);
+        unawaited(_speakResult(text));
       }
-    } catch (e) {
+    } catch (_) {
+      if (mounted && generation == _captureGeneration) {
+        _setError(
+          'Could not read this page. Hold the phone steady and try again.',
+        );
+      }
+    } finally {
       try {
         await tempFile?.delete();
       } catch (_) {}
-      if (!mounted) return;
-      _setError('Document scanning failed: $e');
-    } finally {
+      _isCapturing = false;
       VoiceDiagnosticLogger.scanConsumed(requestId);
     }
   }
 
   Future<void> _speakResult(String text) async {
+    await _stopSpeaking();
+    if (!mounted) return;
     _isSpeaking = true;
     if (mounted) setState(() {});
     try {
@@ -515,21 +602,33 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
   }
 
   Future<void> _rescan() async {
+    if (_isCapturing) {
+      _announce('Please wait for this scan to finish.');
+      return;
+    }
+    _captureGeneration++;
     await _stopSpeaking();
+    if (!mounted) return;
+    _textPlayer?.load('');
     _voiceKernel.setFeatureContext(VoiceFeatureContext.scannerCapture);
     HapticFeedback.lightImpact();
     setState(() {
-      _state = _OcrState.cameraReady;
+      _state = _cameraController?.value.isInitialized == true
+          ? _OcrState.cameraReady
+          : _OcrState.idle;
       _recognisedText = null;
       _errorMessage = null;
       _currentFramingCue = FramingCue.noDocument;
     });
     _lastSpokenCue = FramingCue.noDocument;
-    _announce('Scanner ready.');
     final controller = _cameraController;
-    if (controller != null &&
-        controller.value.isInitialized &&
-        !controller.value.isStreamingImages) {
+    if (controller == null || !controller.value.isInitialized) {
+      await _initCamera(cameraIndex: _selectedCameraIndex);
+      return;
+    }
+    _scanLaserController.repeat(reverse: true);
+    _announce('Scanner ready.');
+    if (!controller.value.isStreamingImages) {
       try {
         await controller.startImageStream(_handleFramingStream);
       } catch (_) {}
@@ -566,8 +665,52 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
     }
   }
 
+  Future<void> _openAssistantWithDocument() async {
+    final document = _recognisedText;
+    if (document == null || document.trim().isEmpty) return;
+    await _stopSpeaking();
+    if (!mounted) return;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Review document with Vision AI'),
+        content: const Text(
+          'The document will be placed in an editable draft. Nothing is sent '
+          'until you tap Send. Sending uses your paired laptop assistant and '
+          'may use optional Gemini reasoning if you enabled it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('ocr_review_in_assistant_button'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Review Draft'),
+          ),
+        ],
+      ),
+    );
+    if (proceed == true && mounted) {
+      await Navigator.of(context).pushNamed(
+        RoutePaths.assistant,
+        arguments: 'Help me understand this scanned document:\n\n$document',
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _voiceKernel.setFeatureContext(
+          _state == _OcrState.result
+              ? VoiceFeatureContext.scannerReading
+              : VoiceFeatureContext.scannerCapture,
+        );
+      });
+    }
+  }
+
   void _setError(String message) {
     if (!mounted) return;
+    _scanLaserController.stop();
     setState(() {
       _state = _OcrState.error;
       _errorMessage = message;
@@ -695,7 +838,7 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
             title: 'Document Scanner Privacy',
             messages: [
               'Photos are processed on this phone only using local ML Kit AI. '
-                  'No image is uploaded or stored after recognition.',
+                  'The temporary photo is deleted after recognition.',
               'For best results, hold the phone parallel and steady ~10-12 inches over a flat document.',
               'Voice accessible: you can say "Scan Document" or "Read Document" anytime.',
             ],
@@ -748,6 +891,17 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
                     onSetProfile: (profile) =>
                         unawaited(_setReadingProfile(profile)),
                   ),
+                  if (_readerError) ...[
+                    const SizedBox(height: AppSpacing.space3),
+                    Semantics(
+                      liveRegion: true,
+                      child: const Text(
+                        'Reading aloud stopped because speech output failed. '
+                        'Check your phone volume and speech engine, then tap Start Reading.',
+                        style: TextStyle(color: AppColors.warning),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.space3),
                   const _ScannerVoiceShortcutsCard(),
                   const SizedBox(height: AppSpacing.space3),
@@ -784,7 +938,10 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
           // Primary Scan Action Button
           Semantics(
             button: true,
-            label: 'Scan document. Captures photo and reads text aloud.',
+            label: 'Scan document and read aloud',
+            hint: 'Captures a photo and recognizes text on this phone.',
+            onTap: _captureAndRecognise,
+            excludeSemantics: true,
             child: FilledButton.icon(
               key: const Key('ocr_scan_button'),
               onPressed: _captureAndRecognise,
@@ -812,49 +969,43 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
           const SizedBox(height: AppSpacing.space3),
 
           // Quick Action Toolbar: Flashlight, Camera Flip, Voice Assistant
-          Row(
+          _ResponsiveActionGroup(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _toggleTorch,
-                  icon: Icon(
-                    _isTorchOn ? Icons.flash_on : Icons.flash_off,
-                    color: _isTorchOn ? AppColors.warning : AppColors.slate300,
-                  ),
-                  label: Text(_isTorchOn ? 'Torch On' : 'Torch Off'),
+              OutlinedButton.icon(
+                onPressed: _toggleTorch,
+                icon: Icon(
+                  _isTorchOn ? Icons.flash_on : Icons.flash_off,
+                  color: _isTorchOn ? AppColors.warning : AppColors.slate300,
+                ),
+                label: Text(
+                  _isTorchOn ? 'Turn flashlight off' : 'Turn flashlight on',
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+              if (_availableCameras.length > 1) ...[
+                OutlinedButton.icon(
+                  onPressed: _switchCamera,
+                  icon: const Icon(Icons.flip_camera_ios_outlined),
+                  label: const Text('Switch camera'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
-              ),
-              if (_availableCameras.length > 1) ...[
-                const SizedBox(width: AppSpacing.space2),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _switchCamera,
-                    icon: const Icon(Icons.flip_camera_ios_outlined),
-                    label: const Text('Flip Camera'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
               ],
-              const SizedBox(width: AppSpacing.space2),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: () {
-                    unawaited(
-                      ref
-                          .read(visionVoiceKernelProvider.notifier)
-                          .startHandsFree(),
-                    );
-                  },
-                  icon: const Icon(Icons.mic, color: AppColors.primary),
-                  label: const Text('Vision AI'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
+              FilledButton.tonalIcon(
+                onPressed: () {
+                  unawaited(
+                    ref
+                        .read(visionVoiceKernelProvider.notifier)
+                        .startHandsFree(),
+                  );
+                },
+                icon: const Icon(Icons.mic, color: AppColors.primary),
+                label: const Text('Enable voice controls'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
             ],
@@ -877,35 +1028,31 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
             _recognisedText != null &&
             _recognisedText!.trim().isNotEmpty) ...[
           // Secondary Action Row: Read Again, Copy Text, Ask AI
-          Row(
+          _ResponsiveActionGroup(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _speakResult(_recognisedText!),
-                  icon: const Icon(Icons.volume_up_outlined),
-                  label: const Text('Read Again'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
+              OutlinedButton.icon(
+                onPressed: () => _speakResult(_recognisedText!),
+                icon: const Icon(Icons.volume_up_outlined),
+                label: const Text('Read document again'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
-              const SizedBox(width: AppSpacing.space2),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _copyTextToClipboard(_recognisedText!),
-                  icon: const Icon(Icons.copy_outlined),
-                  label: const Text('Copy Text'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
+              OutlinedButton.icon(
+                onPressed: () => _copyTextToClipboard(_recognisedText!),
+                icon: const Icon(Icons.copy_outlined),
+                label: const Text('Copy document text'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
-              const SizedBox(width: AppSpacing.space2),
-              Expanded(
+              Semantics(
+                label: 'Review scanned document with Vision AI',
+                button: true,
+                onTap: _openAssistantWithDocument,
+                excludeSemantics: true,
                 child: FilledButton.tonalIcon(
-                  onPressed: () {
-                    Navigator.of(context).pushNamed(RoutePaths.assistant);
-                  },
+                  onPressed: _openAssistantWithDocument,
                   icon: const Icon(
                     Icons.auto_awesome,
                     color: AppColors.primary,
@@ -924,6 +1071,9 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
           Semantics(
             button: true,
             label: 'Scan another document',
+            hint: 'Returns to the camera to scan a new page.',
+            onTap: _rescan,
+            excludeSemantics: true,
             child: FilledButton.icon(
               key: const Key('ocr_rescan_button'),
               onPressed: _rescan,
@@ -944,7 +1094,9 @@ class _OcrScannerScreenState extends ConsumerState<OcrScannerScreen>
         if (_state == _OcrState.error) ...[
           Semantics(
             button: true,
-            label: 'Try restarting camera scanner',
+            label: 'Restart document scanner camera',
+            onTap: () => unawaited(_initCamera()),
+            excludeSemantics: true,
             child: FilledButton.icon(
               key: const Key('ocr_retry_button'),
               onPressed: () => unawaited(_initCamera()),
@@ -1031,6 +1183,8 @@ class _ScannerViewfinder extends StatelessWidget {
     }
 
     return Semantics(
+      container: true,
+      explicitChildNodes: true,
       label:
           'Live camera document scanner viewfinder. Point at document to align.',
       child: ClipRRect(
@@ -1120,6 +1274,8 @@ class _ScannerViewfinder extends StatelessWidget {
                       label: isTorchOn
                           ? 'Turn off flashlight'
                           : 'Turn on flashlight',
+                      onTap: onToggleTorch,
+                      excludeSemantics: true,
                       child: Material(
                         color: Colors.black.withValues(alpha: 0.55),
                         borderRadius: BorderRadius.circular(AppRadii.full),
@@ -1165,6 +1321,8 @@ class _ScannerViewfinder extends StatelessWidget {
                       Semantics(
                         button: true,
                         label: 'Switch camera lens',
+                        onTap: onSwitchCamera,
+                        excludeSemantics: true,
                         child: Material(
                           color: Colors.black.withValues(alpha: 0.55),
                           shape: const CircleBorder(),
@@ -1413,8 +1571,8 @@ class _CurrentSentenceSpotlightCard extends StatelessWidget {
     if (currentSentence.trim().isEmpty) return const SizedBox.shrink();
 
     return Semantics(
-      label:
-          'Currently reading line $currentIdx of $total: $currentSentence. Tap Stop to stop reading.',
+      container: true,
+      explicitChildNodes: true,
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.space4),
         decoration: BoxDecoration(
@@ -1467,7 +1625,9 @@ class _CurrentSentenceSpotlightCard extends StatelessWidget {
                 if (isSpeaking)
                   Semantics(
                     button: true,
-                    label: 'Stop reading aloud immediately',
+                    label: 'Stop document reading',
+                    onTap: onStop,
+                    excludeSemantics: true,
                     child: OutlinedButton.icon(
                       onPressed: onStop,
                       icon: const Icon(
@@ -1537,7 +1697,8 @@ class _DocumentReaderKaraokeCard extends StatelessWidget {
         .length;
 
     return Semantics(
-      label: 'Document text reader. Tap any sentence to listen from there.',
+      container: true,
+      explicitChildNodes: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1586,6 +1747,8 @@ class _DocumentReaderKaraokeCard extends StatelessWidget {
                 Semantics(
                   button: true,
                   label: 'Copy full document text to clipboard',
+                  onTap: onCopyText,
+                  excludeSemantics: true,
                   child: OutlinedButton.icon(
                     key: const Key('ocr_copy_button'),
                     onPressed: onCopyText,
@@ -1614,8 +1777,10 @@ class _DocumentReaderKaraokeCard extends StatelessWidget {
 
               return Semantics(
                 button: true,
-                label:
-                    'Line ${index + 1}: $sentence. ${isCurrent ? "Currently selected." : "Tap to read from here."}',
+                label: 'Read from line ${index + 1}: $sentence',
+                selected: isCurrent,
+                onTap: () => onSentenceTapped(index),
+                excludeSemantics: true,
                 child: Material(
                   color: isCurrent
                       ? AppColors.primary.withValues(alpha: 0.12)
@@ -1871,7 +2036,9 @@ class _PlaybackControlConsole extends StatelessWidget {
               // Previous reading line.
               Semantics(
                 button: true,
-                label: 'Previous line',
+                label: 'Read previous document line',
+                onTap: onPrevious,
+                excludeSemantics: true,
                 child: Material(
                   color: AppColors.slate700,
                   shape: const CircleBorder(),
@@ -1896,6 +2063,8 @@ class _PlaybackControlConsole extends StatelessWidget {
               Semantics(
                 button: true,
                 label: playLabel,
+                onTap: onPlayPause,
+                excludeSemantics: true,
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
@@ -1933,7 +2102,9 @@ class _PlaybackControlConsole extends StatelessWidget {
               // Next reading line.
               Semantics(
                 button: true,
-                label: 'Next line',
+                label: 'Read next document line',
+                onTap: onNext,
+                excludeSemantics: true,
                 child: Material(
                   color: AppColors.slate700,
                   shape: const CircleBorder(),
@@ -1955,56 +2126,49 @@ class _PlaybackControlConsole extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.space2),
-          Text(
-            playLabel,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.onDarkSurface,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
+          ExcludeSemantics(
+            child: Text(
+              playLabel,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.onDarkSurface,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.space3),
 
           // Direct line navigation: first, numbered picker, and last.
-          Row(
+          _ResponsiveActionGroup(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  key: const Key('ocr_first_line_button'),
-                  onPressed: onFirst,
-                  icon: const Icon(Icons.first_page_rounded, size: 19),
-                  label: const FittedBox(child: Text('First')),
-                ),
+              OutlinedButton.icon(
+                key: const Key('ocr_first_line_button'),
+                onPressed: onFirst,
+                icon: const Icon(Icons.first_page_rounded, size: 19),
+                label: const Text('Read first line'),
               ),
-              const SizedBox(width: AppSpacing.space2),
-              Expanded(
-                flex: 2,
-                child: FilledButton.tonalIcon(
-                  key: const Key('ocr_line_picker_button'),
-                  onPressed: onSelectLine,
-                  icon: const Icon(
-                    Icons.format_list_numbered_rounded,
-                    size: 19,
-                  ),
-                  label: FittedBox(child: Text('Go to Line $current')),
-                ),
+              FilledButton.tonalIcon(
+                key: const Key('ocr_line_picker_button'),
+                onPressed: onSelectLine,
+                icon: const Icon(Icons.format_list_numbered_rounded, size: 19),
+                label: const Text('Choose reading line'),
               ),
-              const SizedBox(width: AppSpacing.space2),
-              Expanded(
-                child: OutlinedButton.icon(
-                  key: const Key('ocr_last_line_button'),
-                  onPressed: onLast,
-                  icon: const Icon(Icons.last_page_rounded, size: 19),
-                  label: const FittedBox(child: Text('Last')),
-                ),
+              OutlinedButton.icon(
+                key: const Key('ocr_last_line_button'),
+                onPressed: onLast,
+                icon: const Icon(Icons.last_page_rounded, size: 19),
+                label: const Text('Read last line'),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.space2),
           Semantics(
             button: true,
-            label: 'Stop reading and keep the current line selected',
+            label: 'Stop document reading',
+            hint: 'Keeps the current line selected.',
+            onTap: onStop,
+            excludeSemantics: true,
             child: OutlinedButton.icon(
               key: const Key('ocr_stop_reading_button'),
               onPressed: onStop,
@@ -2026,6 +2190,8 @@ class _PlaybackControlConsole extends StatelessWidget {
                 child: Semantics(
                   button: true,
                   label: 'Repeat current line',
+                  onTap: onRepeat,
+                  excludeSemantics: true,
                   child: OutlinedButton.icon(
                     key: const Key('ocr_repeat_button'),
                     onPressed: onRepeat,
@@ -2050,6 +2216,8 @@ class _PlaybackControlConsole extends StatelessWidget {
                 child: Semantics(
                   button: true,
                   label: 'Spell out current line letter by letter',
+                  onTap: onSpell,
+                  excludeSemantics: true,
                   child: OutlinedButton.icon(
                     key: const Key('ocr_spell_button'),
                     onPressed: onSpell,
@@ -2114,7 +2282,7 @@ class _PlaybackControlConsole extends StatelessWidget {
                     HapticFeedback.selectionClick();
                     onSetProfile(ReadingProfile.learning);
                   },
-                  semanticLabel: 'Study speed, 0.35 speed rate',
+                  semanticLabel: 'Set study reading speed',
                 ),
                 const SizedBox(width: 4),
                 _SpeedSegmentPill(
@@ -2126,7 +2294,7 @@ class _PlaybackControlConsole extends StatelessWidget {
                     HapticFeedback.selectionClick();
                     onSetProfile(ReadingProfile.normal);
                   },
-                  semanticLabel: 'Normal speed, 0.50 speed rate',
+                  semanticLabel: 'Set normal reading speed',
                 ),
                 const SizedBox(width: 4),
                 _SpeedSegmentPill(
@@ -2138,13 +2306,43 @@ class _PlaybackControlConsole extends StatelessWidget {
                     HapticFeedback.selectionClick();
                     onSetProfile(ReadingProfile.skim);
                   },
-                  semanticLabel: 'Fast speed, 0.75 speed rate',
+                  semanticLabel: 'Set fast reading speed',
                 ),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Keeps actions readable at large text sizes and on narrow phones.
+class _ResponsiveActionGroup extends StatelessWidget {
+  const _ResponsiveActionGroup({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked =
+            constraints.maxWidth < 440 ||
+            MediaQuery.textScalerOf(context).scale(1) >= 1.5;
+        final width = stacked
+            ? constraints.maxWidth
+            : (constraints.maxWidth -
+                      AppSpacing.space2 * (children.length - 1)) /
+                  children.length;
+        return Wrap(
+          spacing: AppSpacing.space2,
+          runSpacing: AppSpacing.space2,
+          children: [
+            for (final child in children) SizedBox(width: width, child: child),
+          ],
+        );
+      },
     );
   }
 }
@@ -2171,7 +2369,10 @@ class _SpeedSegmentPill extends StatelessWidget {
       child: Semantics(
         button: true,
         selected: isSelected,
+        inMutuallyExclusiveGroup: true,
         label: semanticLabel,
+        onTap: onTap,
+        excludeSemantics: true,
         child: Material(
           color: isSelected ? AppColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadii.defaultRadius),

@@ -10,12 +10,14 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/assistant_defaults.dart';
 import '../../../core/widgets/action_buttons.dart';
 import '../../../core/widgets/app_screen_scaffold.dart';
+import 'gemini_connection_card.dart';
+import 'smart_ai_cloud_connection_card.dart';
 
-/// Screen for pairing the phone with the laptop backend.
+/// Select personal Gemini mode or pair with a private-LAN laptop.
 ///
 /// Supports:
 /// - Manual IP / hostname entry
-/// - Current-laptop mDNS endpoint preselected by default
+/// - Restore the saved laptop endpoint without assuming a hotspot address
 /// - Pairing code entry
 /// - Re-pair and Unpair
 class AssistantConnectionScreen extends ConsumerStatefulWidget {
@@ -28,9 +30,7 @@ class AssistantConnectionScreen extends ConsumerStatefulWidget {
 
 class _AssistantConnectionScreenState
     extends ConsumerState<AssistantConnectionScreen> {
-  final _hostController = TextEditingController(
-    text: AssistantDefaults.currentLaptopHost,
-  );
+  final _hostController = TextEditingController();
   final _portController = TextEditingController(
     text: '${AssistantDefaults.currentLaptopPort}',
   );
@@ -40,6 +40,24 @@ class _AssistantConnectionScreenState
   bool _pairing = false;
   String? _pairingError;
   String? _pairingSuccess;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final controller = ref.read(assistantSessionControllerProvider.notifier);
+      await controller.loadStoredCredential();
+      if (!mounted) return;
+      final credential = ref
+          .read(assistantSessionControllerProvider)
+          .credential;
+      final uri = Uri.tryParse(credential?.backendUrl ?? '');
+      if (_hostController.text.isEmpty && uri != null && uri.host.isNotEmpty) {
+        _hostController.text = uri.host;
+        _portController.text = '${uri.port}';
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -58,6 +76,10 @@ class _AssistantConnectionScreenState
     return AppScreenScaffold(
       title: AppStrings.assistantConnectionTitle,
       children: [
+        const SmartAiCloudConnectionCard(),
+        const Divider(height: AppSpacing.space8),
+        const GeminiConnectionCard(),
+        const Divider(height: AppSpacing.space8),
         // Current status
         if (isPaired) ...[
           _PairedCard(credential: controllerState.credential!),
@@ -91,24 +113,14 @@ class _AssistantConnectionScreenState
         ),
         const SizedBox(height: AppSpacing.space4),
 
-        Semantics(
-          container: true,
-          label:
-              'This Mac is selected by default at '
-              '${AssistantDefaults.currentLaptopHost}, port '
-              '${AssistantDefaults.currentLaptopPort}.',
-          child: Card(
-            child: ListTile(
-              leading: const Icon(Icons.laptop_mac, color: AppColors.primary),
-              title: const Text('This Mac — Wi-Fi Direct'),
-              subtitle: const Text(
-                '${AssistantDefaults.currentLaptopHost}:'
-                '${AssistantDefaults.currentLaptopPort}',
-              ),
-              trailing: TextButton(
-                onPressed: _useCurrentLaptop,
-                child: const Text('Use'),
-              ),
+        const Card(
+          child: ListTile(
+            leading: Icon(Icons.wifi_tethering),
+            title: Text('Phone hotspot or private Wi-Fi'),
+            subtitle: Text(
+              'Join both the laptop and Raspberry Pi to this phone’s hotspot. '
+              'The phone can keep ordinary Wi-Fi off. Enter the laptop’s current '
+              'hotspot IP below; the Pi address is entered separately in Wearable Mode.',
             ),
           ),
         ),
@@ -119,21 +131,6 @@ class _AssistantConnectionScreenState
           spacing: AppSpacing.space2,
           runSpacing: AppSpacing.space2,
           children: [
-            ActionChip(
-              avatar: const Icon(
-                Icons.wifi,
-                size: 16,
-                color: AppColors.primary,
-              ),
-              label: const Text('Wi-Fi (10.141.17.235)'),
-              onPressed: () {
-                setState(() {
-                  _hostController.text = '10.141.17.235';
-                  _portController.text = '8765';
-                  _pairingError = null;
-                });
-              },
-            ),
             ActionChip(
               avatar: const Icon(Icons.usb, size: 16, color: AppColors.primary),
               label: const Text('USB Cable (127.0.0.1)'),
@@ -174,67 +171,60 @@ class _AssistantConnectionScreenState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Host
-              Semantics(
-                label: 'Laptop hostname or IP address',
-                child: TextFormField(
-                  key: AppKeys.assistantHostField,
-                  controller: _hostController,
-                  keyboardType: TextInputType.url,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: 'Laptop hostname or IP',
-                    hintText: AssistantDefaults.currentLaptopHost,
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) {
-                    return WearableController.validateHost(v);
-                  },
+              TextFormField(
+                key: AppKeys.assistantHostField,
+                controller: _hostController,
+                keyboardType: TextInputType.url,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Laptop hostname or IP address',
+                  hintText: 'Current laptop IP on the phone hotspot',
+                  border: OutlineInputBorder(),
                 ),
+                validator: (v) {
+                  return WearableController.validateHost(v);
+                },
               ),
               const SizedBox(height: AppSpacing.space3),
 
               // Port
-              Semantics(
-                label: 'Backend port number',
-                child: TextFormField(
-                  key: AppKeys.assistantPortField,
-                  controller: _portController,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: 'Port',
-                    hintText: '8765',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) {
-                    final port = int.tryParse(v ?? '');
-                    if (port == null || port < 1 || port > 65535) {
-                      return 'Enter a valid port (1–65535)';
-                    }
-                    return null;
-                  },
+              TextFormField(
+                key: AppKeys.assistantPortField,
+                controller: _portController,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Laptop assistant port number',
+                  hintText: '8765',
+                  border: OutlineInputBorder(),
                 ),
+                validator: (v) {
+                  final port = int.tryParse(v ?? '');
+                  if (port == null || port < 1 || port > 65535) {
+                    return 'Enter a valid port (1–65535)';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: AppSpacing.space3),
 
-              // Pairing code (Optional)
-              Semantics(
-                label:
-                    'Pairing code (Optional — leave blank for direct pairing)',
-                child: TextFormField(
-                  key: AppKeys.assistantPairingCodeField,
-                  controller: _codeController,
-                  keyboardType: TextInputType.text,
-                  textInputAction: TextInputAction.done,
-                  obscureText: false,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Pairing code (Optional)',
-                    hintText: 'Leave empty for 1-click direct pairing',
-                    border: OutlineInputBorder(),
-                  ),
+              // Owner-issued one-time pairing code
+              TextFormField(
+                key: AppKeys.assistantPairingCodeField,
+                controller: _codeController,
+                keyboardType: TextInputType.text,
+                textInputAction: TextInputAction.done,
+                obscureText: false,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: const InputDecoration(
+                  labelText: 'One-time pairing code',
+                  hintText: 'Enter the code shown on your laptop',
+                  border: OutlineInputBorder(),
                 ),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'Enter the one-time pairing code from your laptop.'
+                    : null,
               ),
               const SizedBox(height: AppSpacing.space5),
 
@@ -266,10 +256,10 @@ class _AssistantConnectionScreenState
 
               PrimaryActionButton(
                 key: AppKeys.assistantPairButton,
-                label: _pairing ? 'Connecting…' : 'Connect to Laptop (Direct)',
+                label: _pairing ? 'Connecting…' : 'Pair with Laptop',
                 icon: Icons.link,
                 semanticLabel:
-                    'Connect this phone directly to the laptop assistant backend',
+                    'Pair with the laptop assistant using its one-time code',
                 onPressed: _pairing ? null : _doPair,
               ),
             ],
@@ -303,15 +293,6 @@ class _AssistantConnectionScreenState
         _pairingSuccess = 'Paired successfully! You can now use the assistant.';
         _codeController.clear();
       }
-    });
-  }
-
-  void _useCurrentLaptop() {
-    setState(() {
-      _hostController.text = AssistantDefaults.currentLaptopHost;
-      _portController.text = '${AssistantDefaults.currentLaptopPort}';
-      _pairingError = null;
-      _pairingSuccess = null;
     });
   }
 }
@@ -378,12 +359,9 @@ class _InstructionsCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.space2),
           const Text(
-            'This Mac is already selected and its assistant starts '
-            'automatically at login. For the first secure connection, enter '
-            'the one-time pairing code shown on this Mac and tap Pair. The '
-            'app remembers the encrypted connection after that.\n\n'
-            'When using another laptop, replace the host and port with that '
-            'laptop’s details, start its backend, and use its pairing code.\n\n'
+            'For laptop mode, start the backend, enter its current private IP '
+            'and one-time pairing code, then tap Pair. The app remembers the '
+            'encrypted connection. Hotspot addresses can change after restart.\n\n'
             'Gemini is used only when GEMINI_API_KEY or GOOGLE_API_KEY is set '
             'on the laptop. Otherwise the backend uses local Ollama. The phone '
             'recognizes app-control speech on-device; these commands need no '

@@ -1,0 +1,202 @@
+[
+  {
+    "label": "Document Scanner",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Go back from Document Scanner",
+    "bounds": [
+      8,
+      56,
+      104,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Document Scanner",
+    "bounds": [
+      172,
+      78,
+      548,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Status: Scanner: Reading Text\nSCANNER: READING TEXT",
+    "bounds": [
+      48,
+      208,
+      672,
+      264
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Line 1 of 6",
+    "bounds": [
+      82,
+      326,
+      224,
+      368
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Normal",
+    "bounds": [
+      541,
+      330,
+      620,
+      364
+    ],
+    "clickable": false
+  },
+  {
+    "label": "17",
+    "bounds": [
+      82,
+      388,
+      638,
+      400
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Read previous document line",
+    "bounds": [
+      154,
+      450,
+      258,
+      554
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Start Reading",
+    "bounds": [
+      290,
+      432,
+      430,
+      572
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Read next document line",
+    "bounds": [
+      462,
+      450,
+      566,
+      554
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Read first line",
+    "bounds": [
+      82,
+      654,
+      638,
+      766
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Choose reading line",
+    "bounds": [
+      82,
+      782,
+      638,
+      894
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Read last line",
+    "bounds": [
+      82,
+      910,
+      638,
+      1022
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Stop document reading, Keeps the current line selected.",
+    "bounds": [
+      82,
+      1038,
+      638,
+      1134
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Repeat current line",
+    "bounds": [
+      82,
+      1158,
+      352,
+      1270
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Spell out current line letter by letter",
+    "bounds": [
+      368,
+      1158,
+      638,
+      1270
+    ],
+    "clickable": true
+  },
+  {
+    "label": "READING SPEED",
+    "bounds": [
+      126,
+      1328,
+      327,
+      1362
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Set study reading speed",
+    "bounds": [
+      92,
+      1388,
+      265,
+      1492
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Set normal reading speed",
+    "bounds": [
+      273,
+      1388,
+      447,
+      1492
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Set fast reading speed",
+    "bounds": [
+      455,
+      1388,
+      628,
+      1492
+    ],
+    "clickable": true
+  }
+]

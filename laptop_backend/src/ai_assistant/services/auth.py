@@ -44,29 +44,6 @@ class AuthService:
             )
         return code
 
-    def direct_pair(self, user_id: str = "default_user", display_name: str = "User") -> tuple[str, str, str]:
-        """Issue a bearer token directly without requiring a pairing code."""
-        token = secrets.token_urlsafe(32)
-        token_hash = self._hash(token)
-        token_expires = (datetime.now(UTC) + timedelta(days=settings.token_ttl_days)).isoformat()
-
-        with self._conn:
-            self._conn.execute(
-                """
-                INSERT INTO users (user_id, display_name, token_hash, token_expires_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    display_name = excluded.display_name,
-                    token_hash = excluded.token_hash,
-                    token_expires_at = excluded.token_expires_at,
-                    pairing_code = NULL,
-                    pairing_code_expires_at = NULL
-                """,
-                (user_id, display_name, token_hash, token_expires),
-            )
-
-        return user_id, token, display_name
-
     def pair(self, pairing_code: str) -> tuple[str, str, str]:
         """Validate the pairing code and issue a bearer token.
 
@@ -96,15 +73,17 @@ class AuthService:
         token_expires = (datetime.now(UTC) + timedelta(days=settings.token_ttl_days)).isoformat()
 
         with self._conn:
-            self._conn.execute(
+            result = self._conn.execute(
                 """
                 UPDATE users
                 SET token_hash = ?, token_expires_at = ?,
                     pairing_code = NULL, pairing_code_expires_at = NULL
-                WHERE user_id = ?
+                WHERE user_id = ? AND pairing_code = ? AND pairing_code_expires_at > ?
                 """,
-                (token_hash, token_expires, user_id),
+                (token_hash, token_expires, user_id, code_hash, now),
             )
+            if result.rowcount != 1:
+                raise AuthError("Invalid or expired pairing code.")
 
         return user_id, token, stored_name
 

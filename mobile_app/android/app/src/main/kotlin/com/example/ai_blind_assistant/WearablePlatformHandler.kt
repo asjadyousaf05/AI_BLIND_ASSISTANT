@@ -3,6 +3,7 @@ package com.example.ai_blind_assistant
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.security.keystore.KeyGenParameterSpec
@@ -30,10 +31,17 @@ class WearablePlatformHandler(
 ) : MethodChannel.MethodCallHandler {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
+    private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private val securePreferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     private var discoveryListener: NsdManager.DiscoveryListener? = null
     private var discoveryResult: MethodChannel.Result? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
+    private var discoveryGeneration = 0
+    private var discoveryTimeout: Runnable? = null
+    private var resolvingService = false
+    private val resolveQueue = java.util.ArrayDeque<NsdServiceInfo>()
+    private val seenServices = mutableSetOf<String>()
     private val discoveredServices = linkedMapOf<String, Map<String, Any>>()
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -300,45 +308,34 @@ class WearablePlatformHandler(
         val serviceType = if (requestedType.endsWith(".")) requestedType else "$requestedType."
         val timeoutMs = (call.argument<Number>("timeoutMs")?.toLong() ?: 5000L)
             .coerceIn(1000L, 15000L)
+        val generation = ++discoveryGeneration
         discoveredServices.clear()
+        resolveQueue.clear()
+        seenServices.clear()
         discoveryResult = result
+
+        // Older Android releases filter multicast even for foreground NSD.
+        // Hold this only for the bounded discovery window.
+        try {
+            multicastLock = wifiManager.createMulticastLock("aiba-wearable-discovery").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (_: Exception) {
+            multicastLock = null
+        }
 
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(regType: String) = Unit
 
             override fun onServiceFound(service: NsdServiceInfo) {
-                if (!service.serviceType.equals(serviceType, ignoreCase = true)) return
-                @Suppress("DEPRECATION")
-                nsdManager.resolveService(
-                    service,
-                    object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
-
-                        override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                            val resolvedHost = serviceInfo.host ?: return
-                            if (!isPrivateOrLocal(resolvedHost)) return
-                            val address = resolvedHost.hostAddress ?: return
-                            val attributes = serviceInfo.attributes
-                            val advertisedDeviceId = attributes["deviceId"]
-                                ?.toString(StandardCharsets.UTF_8)
-                                ?.takeIf(::validIdentifier)
-                            val advertisedName = attributes["deviceName"]
-                                ?.toString(StandardCharsets.UTF_8)
-                                ?.takeIf { it.isNotBlank() && it.length <= 128 }
-                            val deviceId = advertisedDeviceId ?: "mdns:${serviceInfo.serviceName}"
-                            val key = "$deviceId:$address:${serviceInfo.port}"
-                            discoveredServices[key] = mapOf(
-                                "id" to deviceId,
-                                "name" to (advertisedName ?: serviceInfo.serviceName),
-                                "host" to address,
-                                "port" to serviceInfo.port,
-                                "source" to "discovered",
-                                "serviceName" to serviceInfo.serviceType,
-                                "serviceType" to serviceInfo.serviceType,
-                            )
-                        }
-                    },
-                )
+                mainHandler.post {
+                    if (generation != discoveryGeneration || discoveryResult == null) return@post
+                    if (!service.serviceType.equals(serviceType, ignoreCase = true)) return@post
+                    if (seenServices.size >= 32 || !seenServices.add(service.serviceName)) return@post
+                    resolveQueue.add(service)
+                    resolveNextService()
+                }
             }
 
             override fun onServiceLost(service: NsdServiceInfo) = Unit
@@ -346,21 +343,85 @@ class WearablePlatformHandler(
             override fun onDiscoveryStopped(serviceType: String) = Unit
 
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                failDiscovery("Device discovery could not start (code $errorCode).")
+                mainHandler.post {
+                    if (generation == discoveryGeneration) {
+                        failDiscovery("Device discovery could not start (code $errorCode).")
+                    }
+                }
             }
 
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                finishDiscovery()
+                mainHandler.post {
+                    if (generation == discoveryGeneration) finishDiscovery()
+                }
             }
         }
         discoveryListener = listener
 
         try {
             nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
-            mainHandler.postDelayed({ finishDiscovery() }, timeoutMs)
+            discoveryTimeout = Runnable {
+                if (generation == discoveryGeneration) finishDiscovery()
+            }.also { mainHandler.postDelayed(it, timeoutMs) }
         } catch (_: Exception) {
             failDiscovery("Device discovery is unavailable on this network.")
         }
+    }
+
+    // The legacy NSD resolver supports one active request. All callbacks and
+    // session state stay on the main thread, including late callback rejection.
+    @Suppress("DEPRECATION")
+    private fun resolveNextService() {
+        if (resolvingService || discoveryResult == null || resolveQueue.isEmpty()) return
+        val service = resolveQueue.removeFirst()
+        val generation = discoveryGeneration
+        resolvingService = true
+        try {
+            nsdManager.resolveService(service, object : NsdManager.ResolveListener {
+                override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    mainHandler.post {
+                        resolvingService = false
+                        resolveNextService()
+                    }
+                }
+
+                override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                    mainHandler.post {
+                        resolvingService = false
+                        if (generation == discoveryGeneration && discoveryResult != null) {
+                            recordResolvedService(serviceInfo)
+                        }
+                        resolveNextService()
+                    }
+                }
+            })
+        } catch (_: Exception) {
+            resolvingService = false
+            mainHandler.post { resolveNextService() }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun recordResolvedService(serviceInfo: NsdServiceInfo) {
+        val resolvedHost = serviceInfo.host ?: return
+        if (!isPrivateOrLocal(resolvedHost) || serviceInfo.port !in 1..65535) return
+        val address = resolvedHost.hostAddress ?: return
+        val attributes = serviceInfo.attributes
+        val advertisedDeviceId = attributes["deviceId"]
+            ?.toString(StandardCharsets.UTF_8)?.takeIf(::validIdentifier)
+        val advertisedName = attributes["deviceName"]
+            ?.toString(StandardCharsets.UTF_8)
+            ?.takeIf { it.isNotBlank() && it.length <= 128 }
+        val deviceId = advertisedDeviceId ?: "mdns:${serviceInfo.serviceName}"
+        discoveredServices[deviceId] = mapOf(
+            "id" to deviceId,
+            "name" to (advertisedName ?: serviceInfo.serviceName),
+            "host" to address,
+            "port" to serviceInfo.port,
+            "source" to "discovered",
+            "serviceName" to serviceInfo.serviceType,
+            "serviceType" to serviceInfo.serviceType,
+        )
     }
 
     private fun resolveWearableDevice(call: MethodCall, result: MethodChannel.Result) {
@@ -416,7 +477,12 @@ class WearablePlatformHandler(
                 // still cleared and the bounded request is completed below.
             }
         }
-        mainHandler.removeCallbacksAndMessages(null)
+        ++discoveryGeneration
+        discoveryTimeout?.let { mainHandler.removeCallbacks(it) }
+        discoveryTimeout = null
+        resolveQueue.clear()
+        seenServices.clear()
+        releaseMulticastLock()
         val pending = discoveryResult
         discoveryResult = null
         pending?.success(discoveredServices.values.toList())
@@ -426,10 +492,33 @@ class WearablePlatformHandler(
     private fun failDiscovery(message: String) {
         val pending = discoveryResult
         discoveryResult = null
+        val listener = discoveryListener
         discoveryListener = null
-        mainHandler.removeCallbacksAndMessages(null)
+        if (listener != null) {
+            try {
+                nsdManager.stopServiceDiscovery(listener)
+            } catch (_: Exception) {
+                // Failed discovery may already have been unregistered.
+            }
+        }
+        ++discoveryGeneration
+        discoveryTimeout?.let { mainHandler.removeCallbacks(it) }
+        discoveryTimeout = null
+        resolveQueue.clear()
+        seenServices.clear()
+        releaseMulticastLock()
         discoveredServices.clear()
         pending?.error("discovery_failed", message, null)
+    }
+
+    private fun releaseMulticastLock() {
+        try {
+            multicastLock?.let { if (it.isHeld) it.release() }
+        } catch (_: Exception) {
+            // Discovery cleanup must not mask its result.
+        } finally {
+            multicastLock = null
+        }
     }
 
     private fun validStorageKey(key: String?): Boolean =

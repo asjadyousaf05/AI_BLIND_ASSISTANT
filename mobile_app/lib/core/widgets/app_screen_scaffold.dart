@@ -77,13 +77,13 @@ class AccessibleTopBar extends StatelessWidget implements PreferredSizeWidget {
     super.key,
     required this.title,
     this.showBackButton = true,
-    this.leadingLabel = 'Back',
+    this.leadingLabel,
     this.trailing,
   });
 
   final String title;
   final bool showBackButton;
-  final String leadingLabel;
+  final String? leadingLabel;
   final Widget? trailing;
 
   @override
@@ -95,7 +95,7 @@ class AccessibleTopBar extends StatelessWidget implements PreferredSizeWidget {
       automaticallyImplyLeading: false,
       leading: showBackButton
           ? IconButton(
-              tooltip: leadingLabel,
+              tooltip: leadingLabel ?? 'Go back from $title',
               onPressed: () => Navigator.of(context).maybePop(),
               icon: const Icon(AppIcons.arrowBack),
             )

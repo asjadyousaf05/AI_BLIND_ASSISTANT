@@ -15,11 +15,17 @@ import '../../domain/enums/voice_rejection_reason.dart';
 import '../../domain/enums/voice_runtime_state.dart';
 import '../../domain/services/intelligent_intent_resolver.dart';
 import '../../domain/services/on_device_speech_recognition_service.dart';
+import '../../domain/services/reader_barge_in_recognition.dart';
+import '../../domain/services/reader_voice_command_policy.dart';
 import '../../domain/services/speech_output_service.dart';
 import '../../domain/services/tts_echo_guard.dart';
+import '../../domain/services/voice_action_registry.dart';
+import '../../domain/services/voice_listening_feedback.dart';
 import '../assistant_providers.dart';
 import '../assistant_session_controller.dart';
 import '../providers.dart';
+import '../router/app_route_observer.dart';
+import '../router/route_paths.dart';
 import 'command_authorizer.dart';
 import 'command_circuit_breaker.dart';
 import 'command_deduplicator.dart';
@@ -122,6 +128,41 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
   AppLifecycleListener? _lifecycleListener;
   int _eventCounter = 0;
   bool _initialized = false;
+  bool _readerPlaybackActive = false;
+  bool _readerCommandsDismissed = false;
+  bool _claimingReaderCandidate = false;
+  bool _voiceSuspended = false;
+  bool _smartAiButtonMode = false;
+  bool _commandInProgress = false;
+  bool _handlingRecognition = false;
+  bool _deferredResume = false;
+  bool _recognizerNeedsRecovery = false;
+  int _listenerGeneration = 0;
+  Future<void>? _startOperation;
+  Future<void>? _recoveryOperation;
+  Future<void> Function()? _prepareSmartAiControl;
+  VoiceFeatureContext _scannerContext = VoiceFeatureContext.scannerCapture;
+
+  Future<void> setSmartAiButtonMode(
+    bool active, {
+    Future<void> Function()? beforeCommand,
+  }) async {
+    _smartAiButtonMode = active;
+    _prepareSmartAiControl = active ? beforeCommand : null;
+    if (state.activeContext == VoiceFeatureContext.smartAi) {
+      await _speechRecognizer.setRecognitionProfile(
+        _profileFor(state.activeContext),
+      );
+    }
+  }
+
+  String _profileFor(VoiceFeatureContext context) => switch (context) {
+    VoiceFeatureContext.smartAi =>
+      _smartAiButtonMode ? 'app_commands' : 'conversation',
+    VoiceFeatureContext.scannerCapture ||
+    VoiceFeatureContext.scannerReading => 'scanner_commands',
+    _ => 'app_commands',
+  };
 
   @override
   VoiceKernelState build() {
@@ -153,6 +194,8 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
 
     _setupLifecycle();
     _subscribeHandsFree();
+    appRouteObserver.addListener(_syncVisibleContext);
+    _syncVisibleContext();
 
     final handsFreeEnabled = ref
         .read(appSettingsControllerProvider)
@@ -170,9 +213,15 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
   /// screens are rejected as stale.
   void setFeatureContext(VoiceFeatureContext newContext) {
     if (!ref.mounted) return;
+    if (newContext.isScanner) _scannerContext = newContext;
+    newContext = _visibleContext(newContext) ?? newContext;
     if (state.activeContext == newContext) return;
 
     final oldContext = state.activeContext;
+    if (newContext != VoiceFeatureContext.scannerReading) {
+      _readerCommandsDismissed = false;
+      setReaderPlaybackActive(false);
+    }
     final nextGen = state.contextGeneration + 1;
     final nextCmdSession = state.commandSessionId + 1;
 
@@ -189,21 +238,91 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     // Reset circuit breaker on context change so user has fresh limits
     _circuitBreaker.reset();
 
-    final profile = switch (newContext) {
-      VoiceFeatureContext.smartAi => 'conversation',
-      VoiceFeatureContext.scannerCapture ||
-      VoiceFeatureContext.scannerReading => 'scanner_commands',
-      _ => 'app_commands',
-    };
+    final profile = _profileFor(newContext);
     unawaited(_speechRecognizer.setRecognitionProfile(profile));
   }
 
+  VoiceFeatureContext? _visibleContext(VoiceFeatureContext requested) =>
+      switch (appRouteObserver.currentRoute) {
+        RoutePaths.home => VoiceFeatureContext.home,
+        RoutePaths.mobileAssistance => VoiceFeatureContext.mobileDetection,
+        RoutePaths.raspberryPi ||
+        RoutePaths.raspberryPiError => VoiceFeatureContext.wearable,
+        RoutePaths.assistant => VoiceFeatureContext.smartAi,
+        RoutePaths.settings ||
+        RoutePaths.assistantConnection ||
+        RoutePaths.assistantSettings => VoiceFeatureContext.settings,
+        RoutePaths.ocrScanner =>
+          requested.isScanner ? requested : _scannerContext,
+        RoutePaths.aboutSafety ||
+        RoutePaths.help => VoiceFeatureContext.informational,
+        RoutePaths.startup ||
+        RoutePaths.permissions ||
+        RoutePaths.modeSelection => VoiceFeatureContext.unknown,
+        _ => null,
+      };
+
+  void _syncVisibleContext() {
+    if (ref.mounted) setFeatureContext(state.activeContext);
+  }
+
+  /// Foreground Smart AI accepts local app commands without a second wake.
+  /// Questions still require the circle; this never enters a conversation path.
+  Future<void> listenForSmartAiControls() async {
+    if (!_smartAiButtonMode ||
+        state.activeContext != VoiceFeatureContext.smartAi) {
+      return;
+    }
+    _voiceSuspended = false;
+    state = state.copyWith(isCommandSessionActive: true);
+    if (!state.isHandsFreeActive) {
+      await startHandsFree();
+    } else {
+      await _resumeListeningForCurrentSession();
+    }
+  }
+
+  /// Keeps contextual reader controls available even during continuous TTS.
+  /// Explicit goodbye remains respected until another wake or reader entry.
+  void setReaderPlaybackActive(bool active) {
+    if (!ref.mounted || _readerPlaybackActive == active) return;
+    _readerPlaybackActive = active;
+    final recognizer = _speechRecognizer;
+    if (recognizer case ReaderBargeInRecognition readerRecognizer) {
+      unawaited(readerRecognizer.setReaderPlaybackActive(active));
+    }
+    if (active &&
+        !_voiceSuspended &&
+        !_readerCommandsDismissed &&
+        state.isHandsFreeActive &&
+        !state.isCommandSessionActive &&
+        state.activeContext == VoiceFeatureContext.scannerReading) {
+      state = state.copyWith(isCommandSessionActive: true);
+      unawaited(_resumeListeningForCurrentSession());
+    }
+  }
+
   /// Starts the hands-free wake-word recognition loop.
-  Future<void> startHandsFree() async {
+  Future<void> startHandsFree() {
+    final pending = _startOperation ?? _recoveryOperation;
+    if (pending != null) return pending;
+    final operation = _startHandsFree();
+    _startOperation = operation;
+    return operation.whenComplete(() {
+      if (identical(_startOperation, operation)) _startOperation = null;
+    });
+  }
+
+  Future<void> _startHandsFree() async {
+    if (!ref.mounted || _voiceSuspended) return;
+    final generation = _listenerGeneration;
     final permissionService = ref.read(microphonePermissionServiceProvider);
     var permission = await permissionService.checkPermission();
     if (!permission.isGranted) {
       permission = await permissionService.requestPermission();
+    }
+    if (!ref.mounted || _voiceSuspended || generation != _listenerGeneration) {
+      return;
     }
     if (!permission.isGranted) {
       state = state.copyWith(
@@ -215,11 +334,16 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
 
     _transitionTo(VoiceRuntimeState.initializing);
     try {
-      final continueCommandSession = state.isCommandSessionActive;
+      final continueCommandSession =
+          state.isCommandSessionActive ||
+          (_smartAiButtonMode &&
+              state.activeContext == VoiceFeatureContext.smartAi) ||
+          (_readerPlaybackActive && !_readerCommandsDismissed);
       final nextRecSession = state.recognizerSessionId + 1;
       state = state.copyWith(
         recognizerSessionId: nextRecSession,
         isHandsFreeActive: true,
+        isCommandSessionActive: continueCommandSession,
         statusMessage: continueCommandSession
             ? _activeSessionStatus
             : _wakeListeningStatus,
@@ -235,16 +359,24 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       // This enables more aggressive VAD, noise suppression, and optimized
       // vocabularies for wake+command recognition on devices that support it.
       try {
-        final profile = switch (state.activeContext) {
-          VoiceFeatureContext.smartAi => 'conversation',
-          VoiceFeatureContext.scannerCapture ||
-          VoiceFeatureContext.scannerReading => 'scanner_commands',
-          _ => 'app_commands',
-        };
+        final profile = _profileFor(state.activeContext);
         await _speechRecognizer.setRecognitionProfile(profile);
       } catch (_) {}
 
-      await _speechRecognizer.startHandsFree(locale: 'en-US');
+      await _speechRecognizer
+          .startHandsFree(locale: 'en-US')
+          .timeout(const Duration(seconds: 15));
+      if (!ref.mounted ||
+          _voiceSuspended ||
+          generation != _listenerGeneration) {
+        await _speechRecognizer.stopHandsFree();
+        if (ref.mounted) state = state.copyWith(isHandsFreeActive: false);
+        return;
+      }
+      final recognizer = _speechRecognizer;
+      if (recognizer case ReaderBargeInRecognition readerRecognizer) {
+        await readerRecognizer.setReaderPlaybackActive(_readerPlaybackActive);
+      }
       if (continueCommandSession) {
         await _speechRecognizer.resumeHandsFree(acceptNextCommand: true);
         _transitionTo(VoiceRuntimeState.commandListening);
@@ -253,6 +385,9 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       }
     } catch (e) {
       VoiceDiagnosticLogger.error('Failed to start hands-free', e);
+      if (!ref.mounted || generation != _listenerGeneration) return;
+      await _speechRecognizer.stopHandsFree();
+      if (!ref.mounted || generation != _listenerGeneration) return;
       _transitionTo(VoiceRuntimeState.error);
       state = state.copyWith(
         isHandsFreeActive: false,
@@ -263,6 +398,8 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
 
   /// Stops hands-free recognition and releases resources.
   Future<void> stopHandsFree() async {
+    _listenerGeneration++;
+    _recognizerNeedsRecovery = false;
     _transitionTo(VoiceRuntimeState.disabled);
     state = state.copyWith(
       isHandsFreeActive: false,
@@ -274,9 +411,22 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     } catch (_) {}
   }
 
+  /// Explicit accessible recovery without changing saved settings or trust.
+  Future<void> restartHandsFree() async {
+    final continueSession = state.isCommandSessionActive;
+    await stopHandsFree();
+    await _startOperation;
+    await _recoveryOperation;
+    if (!ref.mounted || _voiceSuspended) return;
+    state = state.copyWith(isCommandSessionActive: continueSession);
+    await startHandsFree();
+    if (ref.mounted && state.isHandsFreeActive) await _signalListeningReady();
+  }
+
   /// Pauses voice recognition (e.g. during phone call or app background).
   Future<void> pauseVoice() async {
-    if (!state.runtimeState.isListening) return;
+    _listenerGeneration++;
+    _voiceSuspended = true;
     _transitionTo(VoiceRuntimeState.suspended);
     try {
       await _speechRecognizer.pauseHandsFree();
@@ -285,9 +435,10 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
 
   /// Resumes voice recognition after pause.
   Future<void> resumeVoice() async {
-    if (state.runtimeState != VoiceRuntimeState.suspended) return;
+    if (!_voiceSuspended) return;
+    _voiceSuspended = false;
     try {
-      await _resumeListeningForCurrentSession();
+      await _resumeListeningForCurrentSession(signalReady: true);
     } catch (e) {
       VoiceDiagnosticLogger.error('Failed to resume voice', e);
       _transitionTo(VoiceRuntimeState.error);
@@ -310,19 +461,10 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     try {
       final continueCommandSession =
           acceptNextCommand || _shouldContinueCommandSession;
-      await _speechRecognizer.resumeHandsFree(
-        acceptNextCommand: continueCommandSession,
-      );
-      state = state.copyWith(
-        statusMessage: continueCommandSession
-            ? _activeSessionStatus
-            : _wakeListeningStatus,
-      );
-      _transitionTo(
-        continueCommandSession
-            ? VoiceRuntimeState.commandListening
-            : VoiceRuntimeState.wakeListening,
-      );
+      if (continueCommandSession) {
+        state = state.copyWith(isCommandSessionActive: true);
+      }
+      await _resumeListeningForCurrentSession(signalReady: true);
     } catch (error) {
       VoiceDiagnosticLogger.error(
         'Failed to restore hands-free recognition',
@@ -333,8 +475,12 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
   }
 
   /// Speaks feedback text aloud and manages TTS echo guard.
-  Future<void> speakFeedback(String text) async {
-    if (text.isEmpty) return;
+  Future<void> speakFeedback(
+    String text, {
+    bool reportFailure = false,
+    bool resumeListening = true,
+  }) async {
+    if (text.isEmpty || !ref.mounted) return;
 
     final nextTtsGen = state.ttsGeneration + 1;
     state = state.copyWith(ttsGeneration: nextTtsGen);
@@ -350,53 +496,63 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       generation: nextTtsGen,
     );
 
+    Object? speechFailure;
+    StackTrace? speechFailureStack;
     try {
       // Pause mic while speaking unless barge-in is enabled
       await _speechRecognizer.pauseHandsFree();
+      if (!ref.mounted || state.ttsGeneration != nextTtsGen) return;
       await _speechOutput.speak(text);
-    } catch (e) {
+    } catch (e, stack) {
       VoiceDiagnosticLogger.error('TTS feedback failed', e);
+      speechFailure = e;
+      speechFailureStack = stack;
     }
 
     _ttsEchoGuard.onTtsDone(utteranceId: utteranceId, generation: nextTtsGen);
 
     // Async gap: verify this TTS generation was not superseded
-    if (state.ttsGeneration != nextTtsGen) return;
+    if (!ref.mounted || state.ttsGeneration != nextTtsGen || _voiceSuspended) {
+      return;
+    }
+    if (!resumeListening) {
+      _transitionTo(VoiceRuntimeState.executing);
+      return;
+    }
 
     final handsFreeEnabled = ref
         .read(appSettingsControllerProvider)
         .handsFreeAssistantEnabled;
-    if (state.isHandsFreeActive && handsFreeEnabled) {
-      final continueCommandSession = _shouldContinueCommandSession;
-      await _speechRecognizer.resumeHandsFree(
-        acceptNextCommand: continueCommandSession,
-      );
-      state = state.copyWith(
-        statusMessage: continueCommandSession
-            ? _activeSessionStatus
-            : _wakeListeningStatus,
-      );
-      _transitionTo(
-        continueCommandSession
-            ? VoiceRuntimeState.commandListening
-            : VoiceRuntimeState.wakeListening,
-      );
+    if (state.isHandsFreeActive &&
+        (handsFreeEnabled ||
+            (_smartAiButtonMode &&
+                state.activeContext == VoiceFeatureContext.smartAi))) {
+      await _resumeListeningForCurrentSession(signalReady: true);
     } else {
       if (state.isHandsFreeActive) {
         await stopHandsFree();
       }
       _transitionTo(VoiceRuntimeState.disabled);
     }
+    if (reportFailure && speechFailure != null) {
+      Error.throwWithStackTrace(speechFailure, speechFailureStack!);
+    }
   }
 
   /// Silences all active speech immediately.
   Future<void> stopSpeaking() async {
+    if (!ref.mounted) return;
+    final stopGeneration = state.ttsGeneration + 1;
+    state = state.copyWith(ttsGeneration: stopGeneration);
     _ttsEchoGuard.onTtsStop();
     try {
       await _speechOutput.stop();
     } catch (_) {}
+    if (!ref.mounted || state.ttsGeneration != stopGeneration) return;
     if (state.isHandsFreeActive) {
       await _resumeListeningForCurrentSession();
+    } else {
+      _transitionTo(VoiceRuntimeState.disabled);
     }
   }
 
@@ -407,6 +563,7 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
   /// or null if it was unrecognized.
   Future<String?> processManualCommand(String transcript) async {
     if (!ref.mounted) return null;
+    _syncVisibleContext();
 
     // Resolve intent based on current context
     final command = _resolver.resolve(transcript, context: state.activeContext);
@@ -417,8 +574,17 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       return null; // Fallback to Smart AI or ignore
     }
 
+    if (!VoiceActionRegistry.isAllowedIn(command.intent, state.activeContext)) {
+      const message = 'That command is not available on this screen.';
+      await speakFeedback(message);
+      return message;
+    }
+    if (_commandInProgress) {
+      return 'Please wait for the current action to finish.';
+    }
+
     final contextBeforeCommand = state.activeContext;
-    final result = await _executor.execute(command);
+    final result = await _executeWithProgress(command);
     _applySessionExitIfNeeded(command, contextBeforeCommand);
     _syncAssistantContextAfterCommand(command, result, contextBeforeCommand);
 
@@ -458,30 +624,132 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
   }
 
   void _handleNativeEvent(HandsFreeSpeechEvent event) {
+    if (!ref.mounted || _voiceSuspended || !state.isHandsFreeActive) return;
+    if (event.type == HandsFreeSpeechEventType.error) {
+      VoiceDiagnosticLogger.error('Native recognition error event received');
+      _recognizerNeedsRecovery = true;
+      if (!_handlingRecognition &&
+          !_commandInProgress &&
+          state.runtimeState != VoiceRuntimeState.speaking) {
+        unawaited(_recoverRecognizer());
+      }
+      return;
+    }
+    if (_handlingRecognition || _commandInProgress) {
+      if (event.type != HandsFreeSpeechEventType.readerCandidate) {
+        _deferredResume = true;
+      }
+      return;
+    }
+    if (state.runtimeState == VoiceRuntimeState.speaking ||
+        state.runtimeState == VoiceRuntimeState.executing) {
+      return;
+    }
+    _syncVisibleContext();
     switch (event.type) {
       case HandsFreeSpeechEventType.wake:
-        unawaited(_handleWake());
+        unawaited(_runRecognition(_handleWake));
       case HandsFreeSpeechEventType.command:
-        if (event.transcript != null) {
-          unawaited(_handleCommandTranscript(event.transcript!));
+        if (event.transcript?.trim().isNotEmpty == true) {
+          unawaited(
+            _runRecognition(() => _handleCommandTranscript(event.transcript!)),
+          );
+        } else {
+          unawaited(_runRecognition(_resumeListeningForCurrentSession));
         }
+      case HandsFreeSpeechEventType.readerCandidate:
+        unawaited(_handleReaderCandidate(event));
       case HandsFreeSpeechEventType.timeout:
-        unawaited(_handleTimeout());
+        unawaited(_runRecognition(_handleTimeout));
       case HandsFreeSpeechEventType.error:
-        VoiceDiagnosticLogger.error('Native recognition error event received');
-        unawaited(_recoverRecognizer());
+        break;
+    }
+  }
+
+  Future<void> _runRecognition(Future<void> Function() operation) async {
+    _handlingRecognition = true;
+    try {
+      await operation();
+    } catch (error) {
+      VoiceDiagnosticLogger.error('Voice command handling failed', error);
+      if (ref.mounted && state.isHandsFreeActive && !_voiceSuspended) {
+        await _resumeListeningForCurrentSession();
+      }
+    } finally {
+      _handlingRecognition = false;
+      final resume = _deferredResume;
+      _deferredResume = false;
+      if (ref.mounted && state.isHandsFreeActive && !_voiceSuspended) {
+        if (_recognizerNeedsRecovery) {
+          await _recoverRecognizer();
+        } else if (resume && state.runtimeState.isListening) {
+          await _resumeListeningForCurrentSession();
+        }
+      }
     }
   }
 
   int _retryAttempts = 0;
 
+  Future<void> _handleReaderCandidate(HandsFreeSpeechEvent event) async {
+    final recognizer = _speechRecognizer;
+    final transcript = event.transcript;
+    final id = event.candidateId;
+    if (_claimingReaderCandidate ||
+        _voiceSuspended ||
+        recognizer is! ReaderBargeInRecognition ||
+        transcript == null ||
+        id == null ||
+        !state.isHandsFreeActive ||
+        !state.runtimeState.acceptsVoiceInput ||
+        !state.isCommandSessionActive ||
+        !_readerPlaybackActive ||
+        state.activeContext != VoiceFeatureContext.scannerReading ||
+        _ttsEchoGuard.isSelfEcho(transcript)) {
+      return;
+    }
+    final command = _resolver.resolve(transcript, context: state.activeContext);
+    if (!ReaderVoiceCommandPolicy.allowsImmediate(command)) return;
+    final contextGeneration = state.contextGeneration;
+    final session = state.recognizerSessionId;
+    final commandSession = state.commandSessionId;
+    _claimingReaderCandidate = true;
+    try {
+      if (!await (recognizer as ReaderBargeInRecognition)
+          .acceptReaderCommandCandidate(id)) {
+        return;
+      }
+      if (!ref.mounted) return;
+      if (state.contextGeneration != contextGeneration ||
+          state.recognizerSessionId != session ||
+          state.commandSessionId != commandSession ||
+          !state.isHandsFreeActive ||
+          !state.runtimeState.acceptsVoiceInput ||
+          !_readerPlaybackActive) {
+        if (state.isHandsFreeActive && !_voiceSuspended) {
+          await _resumeListeningForCurrentSession();
+        }
+        return;
+      }
+      await _handleCommandTranscript(transcript);
+    } finally {
+      _claimingReaderCandidate = false;
+    }
+  }
+
   Future<void> _handleWake() async {
     if (_ttsEchoGuard.isWakeWordEcho()) {
       VoiceDiagnosticLogger.info('Discarding wake event due to TTS echo');
+      // Native wake delivery pauses capture. A rejected echo must not leave
+      // an otherwise active listener permanently paused.
+      if (state.runtimeState.isListening) {
+        await _resumeListeningForCurrentSession();
+      }
       return;
     }
 
     VoiceDiagnosticLogger.wakeDetected();
+    _readerCommandsDismissed = false;
     final nextCmdSession = state.commandSessionId + 1;
     _retryAttempts = 0;
     state = state.copyWith(
@@ -548,6 +816,7 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     );
 
     if (command.isUnrecognized &&
+        !_smartAiButtonMode &&
         state.activeContext == VoiceFeatureContext.smartAi &&
         _looksLikeIntentionalConversation(transcript)) {
       await _submitSmartAiConversation(transcript);
@@ -687,7 +956,7 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     );
 
     final contextBeforeCommand = state.activeContext;
-    final result = await _executor.execute(command);
+    final result = await _executeWithProgress(command);
     VoiceDiagnosticLogger.consumed(recognitionId);
     _applySessionExitIfNeeded(command, contextBeforeCommand);
     _syncAssistantContextAfterCommand(command, result, contextBeforeCommand);
@@ -722,18 +991,106 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     }
   }
 
-  Future<void> _recoverRecognizer() async {
-    _transitionTo(VoiceRuntimeState.recovering);
+  Future<VoiceCommandResult> _executeWithProgress(VoiceCommand command) async {
+    _commandInProgress = true;
     try {
-      await _speechRecognizer.stopHandsFree();
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      if (state.isHandsFreeActive) {
-        await startHandsFree();
+      if (_smartAiButtonMode &&
+          state.activeContext == VoiceFeatureContext.smartAi) {
+        // Finish reply cancellation and restore its voice before local feedback.
+        await _prepareSmartAiControl?.call();
       }
-    } catch (e) {
-      VoiceDiagnosticLogger.error('Recognizer recovery failed', e);
-      _transitionTo(VoiceRuntimeState.error);
+      return await _executor.execute(
+        command,
+        onProgress: (message) async {
+          if (!ref.mounted) return;
+          state = state.copyWith(statusMessage: message);
+          await speakFeedback(message, resumeListening: false);
+        },
+      );
+    } finally {
+      _commandInProgress = false;
     }
+  }
+
+  Future<void> _recoverRecognizer() {
+    final pending = _recoveryOperation;
+    if (pending != null) return pending;
+    if (!ref.mounted || !state.isHandsFreeActive || _voiceSuspended) {
+      return Future<void>.value();
+    }
+    final operation = _restoreRecognizer();
+    _recoveryOperation = operation;
+    return operation.whenComplete(() {
+      if (identical(_recoveryOperation, operation)) _recoveryOperation = null;
+    });
+  }
+
+  Future<void> _restoreRecognizer() async {
+    final generation = _listenerGeneration;
+    bool current() =>
+        ref.mounted &&
+        !_voiceSuspended &&
+        state.isHandsFreeActive &&
+        _listenerGeneration == generation;
+    _recognizerNeedsRecovery = false;
+    _transitionTo(VoiceRuntimeState.recovering);
+    state = state.copyWith(statusMessage: 'Restoring voice listening…');
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _speechRecognizer.stopHandsFree().timeout(
+          const Duration(seconds: 3),
+        );
+        await Future<void>.delayed(Duration(milliseconds: 150 * (attempt + 1)));
+        if (!current()) return;
+        await _speechRecognizer.setRecognitionProfile(
+          _profileFor(state.activeContext),
+        );
+        await _speechRecognizer
+            .startHandsFree(locale: 'en-US')
+            .timeout(const Duration(seconds: 12));
+        if (!current()) {
+          await _speechRecognizer.stopHandsFree();
+          return;
+        }
+        await _speechRecognizer.resumeHandsFree(
+          acceptNextCommand: _shouldContinueCommandSession,
+        );
+        if (!current()) {
+          await _speechRecognizer.pauseHandsFree();
+          return;
+        }
+        _recognizerNeedsRecovery = false;
+        state = state.copyWith(
+          recognizerSessionId: state.recognizerSessionId + 1,
+          statusMessage: _shouldContinueCommandSession
+              ? _activeSessionStatus
+              : _wakeListeningStatus,
+        );
+        _transitionTo(
+          _shouldContinueCommandSession
+              ? VoiceRuntimeState.commandListening
+              : VoiceRuntimeState.wakeListening,
+        );
+        await _signalListeningReady();
+        return;
+      } catch (error) {
+        VoiceDiagnosticLogger.error(
+          'Offline microphone recovery failed',
+          error,
+        );
+        if (!current()) return;
+      }
+    }
+    await _speechRecognizer.stopHandsFree();
+    if (!current()) return;
+    _recognizerNeedsRecovery = false;
+    state = state.copyWith(
+      isHandsFreeActive: false,
+      statusMessage:
+          'Voice listening stopped. Turn Hands-free off and on in Settings, or use the screen buttons.',
+    );
+    _transitionTo(VoiceRuntimeState.error);
+    _announceAccessibility(state.statusMessage);
   }
 
   Future<void> _acknowledgeWakeAndListen(int commandSession) async {
@@ -759,12 +1116,13 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     }
 
     if (!state.isHandsFreeActive ||
+        _voiceSuspended ||
         state.commandSessionId != commandSession ||
         state.ttsGeneration != generation) {
       return;
     }
     _transitionTo(VoiceRuntimeState.commandListening);
-    await _speechRecognizer.resumeHandsFree(acceptNextCommand: true);
+    await _resumeListeningForCurrentSession(signalReady: true);
   }
 
   bool _looksLikeIntentionalConversation(String transcript) {
@@ -827,6 +1185,7 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     VoiceFeatureContext contextBeforeCommand,
   ) {
     if (result is! VoiceCommandSuccess) return;
+    _syncVisibleContext();
     if (command.intent is NavigateSmartAi) {
       setFeatureContext(VoiceFeatureContext.smartAi);
     } else if (command.intent is DismissAssistant &&
@@ -842,6 +1201,7 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     final isGoodbye =
         command.intent is Goodbye || command.intent is DismissAssistant;
     if (isGoodbye && contextBeforeCommand != VoiceFeatureContext.smartAi) {
+      _readerCommandsDismissed = true;
       state = state.copyWith(
         isCommandSessionActive: false,
         statusMessage: _wakeListeningStatus,
@@ -851,24 +1211,46 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
 
   bool get _shouldContinueCommandSession =>
       state.isCommandSessionActive ||
-      state.activeContext == VoiceFeatureContext.smartAi;
+      (!_smartAiButtonMode &&
+          state.activeContext == VoiceFeatureContext.smartAi);
 
   String get _activeSessionStatus =>
       state.activeContext == VoiceFeatureContext.smartAi
-      ? 'Listening for your next question…'
+      ? (_smartAiButtonMode
+            ? 'Vision AI is listening for app commands. Hold the circle to ask Smart AI.'
+            : 'Listening for your next question…')
       : state.activeContext.isScanner
       ? 'Listening for scanner commands…'
       : 'Listening for your next command…';
 
   static const _wakeListeningStatus =
-      'Listening for "Hey Vision AI" or "Hi Vision AI".';
+      'Say "Hey Vision AI", "Hi Vision AI", or "Listen Vision AI".';
 
-  Future<void> _resumeListeningForCurrentSession() async {
-    if (!state.isHandsFreeActive) return;
+  Future<void> _resumeListeningForCurrentSession({
+    bool signalReady = false,
+  }) async {
+    if (!ref.mounted || !state.isHandsFreeActive || _voiceSuspended) return;
+    if (_recognizerNeedsRecovery) {
+      await _recoverRecognizer();
+      return;
+    }
     final continueCommandSession = _shouldContinueCommandSession;
-    await _speechRecognizer.resumeHandsFree(
-      acceptNextCommand: continueCommandSession,
-    );
+    final generation = _listenerGeneration;
+    try {
+      await _speechRecognizer.resumeHandsFree(
+        acceptNextCommand: continueCommandSession,
+      );
+    } catch (error) {
+      VoiceDiagnosticLogger.error('Offline microphone resume failed', error);
+      await _recoverRecognizer();
+      return;
+    }
+    if (!ref.mounted ||
+        _voiceSuspended ||
+        !state.isHandsFreeActive ||
+        generation != _listenerGeneration) {
+      return;
+    }
     state = state.copyWith(
       statusMessage: continueCommandSession
           ? _activeSessionStatus
@@ -879,6 +1261,26 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
           ? VoiceRuntimeState.commandListening
           : VoiceRuntimeState.wakeListening,
     );
+    if (signalReady) await _signalListeningReady();
+  }
+
+  Future<void> _signalListeningReady() async {
+    if (!ref.mounted ||
+        _voiceSuspended ||
+        _smartAiButtonMode ||
+        _readerPlaybackActive ||
+        state.runtimeState != VoiceRuntimeState.commandListening) {
+      return;
+    }
+    final recognizer = _speechRecognizer;
+    if (recognizer is! VoiceListeningFeedback) return;
+    try {
+      await (recognizer as VoiceListeningFeedback)
+          .playListeningReadyCue()
+          .timeout(const Duration(milliseconds: 500));
+    } catch (error) {
+      VoiceDiagnosticLogger.error('Listening feedback unavailable', error);
+    }
   }
 
   // ─────────────────── Helpers ─────────────────────────────────
@@ -906,14 +1308,9 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
       },
       onResume: () {
         VoiceDiagnosticLogger.info('App resumed — syncing voice');
-        final handsFreeEnabled = ref
-            .read(appSettingsControllerProvider)
-            .handsFreeAssistantEnabled;
-        if (handsFreeEnabled && !state.isHandsFreeActive) {
-          unawaited(startHandsFree());
-        } else if (state.runtimeState == VoiceRuntimeState.suspended) {
-          unawaited(resumeVoice());
-        }
+        final wasSuspended = _voiceSuspended;
+        _voiceSuspended = false;
+        unawaited(_restoreForegroundVoice(wasSuspended));
       },
       onDetach: () {
         VoiceDiagnosticLogger.info('App detached — stopping voice');
@@ -922,7 +1319,32 @@ class VisionVoiceKernelV3 extends Notifier<VoiceKernelState> {
     );
   }
 
+  Future<void> _restoreForegroundVoice(bool wasSuspended) async {
+    final generation = _listenerGeneration;
+    // Permission dialogs can resume the Activity before the old start finishes.
+    // Let that cancelled start settle before opening exactly one replacement.
+    await _startOperation;
+    await _recoveryOperation;
+    if (!ref.mounted || _voiceSuspended || generation != _listenerGeneration) {
+      return;
+    }
+    final enabled = ref
+        .read(appSettingsControllerProvider)
+        .handsFreeAssistantEnabled;
+    if (enabled && !state.isHandsFreeActive) {
+      await startHandsFree();
+    } else if (state.isHandsFreeActive &&
+        (wasSuspended ||
+            state.runtimeState == VoiceRuntimeState.suspended ||
+            state.runtimeState == VoiceRuntimeState.recovering)) {
+      await _resumeListeningForCurrentSession(signalReady: true);
+    }
+  }
+
   void _cleanup() {
+    _listenerGeneration++;
+    _voiceSuspended = true;
+    appRouteObserver.removeListener(_syncVisibleContext);
     _lifecycleListener?.dispose();
     _lifecycleListener = null;
     _handsFreeSub?.cancel();

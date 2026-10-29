@@ -23,23 +23,64 @@ def match_local_command(query: str) -> ParsedModelResponse | None:
 
     # Screen navigation
     nav_screens = {
-        "home": ["go home", "open home", "go to home", "navigate home", "show home", "home screen", "main screen"],
-        "settings": ["open settings", "go to settings", "open the settings", "navigate to settings", "show settings"],
-        "modes": ["select mode", "choose mode", "mode selection", "go to modes", "open modes", "modes screen"],
+        "home": [
+            "go home",
+            "open home",
+            "go to home",
+            "navigate home",
+            "show home",
+            "home screen",
+            "main screen",
+        ],
+        "settings": [
+            "open settings",
+            "go to settings",
+            "open the settings",
+            "navigate to settings",
+            "show settings",
+        ],
+        "modes": [
+            "select mode",
+            "choose mode",
+            "mode selection",
+            "go to modes",
+            "open modes",
+            "modes screen",
+        ],
         "raspberry_pi": ["open raspberry pi", "open pi", "pi screen", "wearable screen"],
         "safety": ["open safety", "about safety", "safety screen", "safety info", "show safety"],
-        "help": ["open help", "go to help", "help screen", "show help", "user guide", "instructions"],
-        "ocr_scanner": ["open ocr", "open scanner", "open document scanner", "ocr screen", "scanner screen"],
+        "help": [
+            "open help",
+            "go to help",
+            "help screen",
+            "show help",
+            "user guide",
+            "instructions",
+        ],
+        "ocr_scanner": [
+            "open ocr",
+            "open scanner",
+            "open document scanner",
+            "ocr screen",
+            "scanner screen",
+        ],
         "back": ["go back", "navigate back", "go to previous", "previous screen", "return back"],
     }
     for screen, phrases in nav_screens.items():
         if any(p in normalized for p in phrases):
-            return _validated("navigate_to_screen", {"screen": screen}, f"Opening {screen.replace('_', ' ')}.")
+            return _validated(
+                "navigate_to_screen", {"screen": screen}, f"Opening {screen.replace('_', ' ')}."
+            )
 
     # Document OCR
     if _has_any(
         normalized,
         "scan again",
+        "restart scanner",
+        "restart the scanner",
+        "restart document scanner",
+        "scan document again",
+        "rescan document",
         "scan another",
         "scan another document",
         "scan another page",
@@ -51,7 +92,7 @@ def match_local_command(query: str) -> ParsedModelResponse | None:
         return _validated(
             "ocr_rescan",
             {},
-            "Ready to scan again. Point your camera at the document and say scan.",
+            "Scanning a new page.",
         )
 
     if _has_any(
@@ -111,22 +152,27 @@ def match_local_command(query: str) -> ParsedModelResponse | None:
     ):
         return _validated("stop_speaking", {}, "Stopping speech.")
 
-    if _has_any(
-        normalized,
+    dismissal = (
+        re.sub(r"^(?:please|can you please|could you please|can you|could you)\s+", "", normalized)
+        .rstrip(".!?,;:")
+        .strip()
+    )
+    if dismissal in {
         "bye vision ai",
-        "bye vision",
-        "goodbye vision",
+        "goodbye vision ai",
+        "good bye vision ai",
         "goodbye",
-        "bye",
+        "good bye",
         "stop listening",
-        "dismiss",
+        "end voice session",
+        "exit smart ai",
+        "close smart ai",
         "go to sleep",
         "exit assistant",
-        "never mind",
+        "dismiss assistant",
         "that is all",
         "that's all",
-        "thanks bye",
-    ):
+    }:
         return _validated("dismiss_assistant", {}, "Goodbye.")
 
     if _has_any(
@@ -374,4 +420,3 @@ def _enabled_value(text: str) -> bool | None:
 
 def _has_any(text: str, *phrases: str) -> bool:
     return any(phrase in text for phrase in phrases)
-

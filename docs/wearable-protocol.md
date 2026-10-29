@@ -1,5 +1,26 @@
 # Wearable Protocol v1
 
+## Module 65 interoperability clarification
+
+Protocol v1 wire fields remain unchanged. The phone seeds a session-local
+monotonic clock from `hello.timestamp`, then constructs enrollment/authentication
+and signed commands in the Pi's time domain. This changes neither system clock
+nor the Pi's two-minute timestamp/replay window. All signed outbound traffic,
+including transport heartbeats/disconnects, shares one increasing sequence.
+
+HMAC uses the **exact encoded timestamp text**; `.123000Z` and `.123Z` denote
+the same instant but are different signed strings. Dart preserves the original
+text after decoding. Canonical payload JSON sorts keys, omits whitespace and
+uses Dart-compatible number rendering: decimal notation for exponents -6..20,
+otherwise an unpadded exponent with `+` for positive values. Keep `1` versus
+`1.0` and negative zero distinct. Golden vectors and 10,000 synthetic numeric
+comparisons verify Python/Dart agreement. A small wire value such as `1e-05`
+canonicalizes to `0.00001` on both peers. Non-finite numbers remain invalid.
+
+The Flutter client uses legal application close codes 4001 (connection/stale
+cleanup) and 4003 (authentication rejection), with 1000 for ordinary shutdown.
+Deploy the updated Pi and app together. See HOTSPOT_VERIFICATION_2026-10-09.md.
+
 Last reviewed: 2026-08-20
 
 ## Scope

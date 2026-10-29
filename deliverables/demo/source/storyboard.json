@@ -1,0 +1,421 @@
+[
+  {
+    "duration": 10,
+    "eyebrow": "AI BLIND ASSISTANT  /  PROJECT DEMONSTRATION",
+    "title": "Everyday information.\nSpoken aloud.",
+    "description": "An Android assistive app for blind and visually impaired users.",
+    "points": [
+      "Object awareness",
+      "Printed-text reading",
+      "Local voice controls"
+    ],
+    "narration": [
+      "Meet AI Blind Assistant, an Android app that turns object observations and printed text into spoken information.",
+      "Let's follow a user's journey."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "01_home",
+        "targets": [
+          [
+            1,
+            "Open User Guide"
+          ],
+          [
+            5,
+            "Open Mobile Mode"
+          ]
+        ]
+      }
+    ],
+    "note": "Current Flutter app • edited emulator walkthrough"
+  },
+  {
+    "duration": 12,
+    "eyebrow": "01  /  OPEN THE APP",
+    "title": "Start from\na clear Home.",
+    "description": "Choose assistance, switch modes, or open preferences.",
+    "points": [
+      "Meaningful control labels",
+      "Camera access when needed",
+      "Visible assistance status"
+    ],
+    "narration": [
+      "From Home, the user opens Mobile Mode or chooses another feature.",
+      "Large labelled controls expose the assistance status, while TalkBack support and on-demand permissions make the interface easier to explore."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "01_home",
+        "targets": [
+          [
+            1,
+            "Open Mobile Mode"
+          ],
+          [
+            6,
+            "Modes"
+          ],
+          [
+            9,
+            "Settings"
+          ]
+        ]
+      }
+    ],
+    "note": "Native Flutter interface • no user account required"
+  },
+  {
+    "duration": 20,
+    "eyebrow": "02  /  PERSONALIZE FEEDBACK",
+    "title": "Set a comfortable\nway to receive alerts.",
+    "description": "Preferences stay on the device.",
+    "points": [
+      "Audio, vibration, or both",
+      "Adjustable detection sensitivity",
+      "Alert pacing and accessibility options"
+    ],
+    "narration": [
+      "Before starting, the user chooses audio, vibration, or both.",
+      "Detection sensitivity and announcement pacing can be adjusted to reduce distracting repetition.",
+      "Accessibility options include large text and high contrast. Preferences are saved locally."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "02_settings",
+        "targets": [
+          [
+            1,
+            "Use audio alerts"
+          ],
+          [
+            4,
+            "Use vibration alerts"
+          ],
+          [
+            7,
+            "Use audio and vibration alerts"
+          ]
+        ]
+      },
+      {
+        "at": 10,
+        "capture": "03_accessibility",
+        "targets": [
+          [
+            11,
+            "Set medium"
+          ],
+          [
+            15,
+            "Vibration alerts"
+          ]
+        ]
+      }
+    ],
+    "note": "Bounded haptics • local settings • adjustable feedback"
+  },
+  {
+    "duration": 24,
+    "eyebrow": "03  /  MOBILE OBJECT AWARENESS",
+    "title": "Start assistance.\nHear what matters.",
+    "description": "The phone processes its camera input locally.",
+    "points": [
+      "Bundled YOLO object detection",
+      "Short object and direction alerts",
+      "Pause, resume, and stop controls"
+    ],
+    "narration": [
+      "The user opens Mobile Mode and starts assistance.",
+      "The bundled object detector runs on the phone. Its alert policy selects relevant object names and relative directions for offline speech and finite vibration.",
+      "The user can pause, resume, or stop. Visual risk is estimated; this is not exact distance measurement."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "06_mobile",
+        "targets": [
+          [
+            1,
+            "Start camera"
+          ]
+        ]
+      },
+      {
+        "at": 5,
+        "capture": "07_mobile_detecting",
+        "targets": []
+      }
+    ],
+    "note": "Synthetic emulator camera • no accuracy or distance claim"
+  },
+  {
+    "duration": 19,
+    "eyebrow": "04  /  SCAN A PRINTED PAGE",
+    "title": "Aim at the page.\nScan when ready.",
+    "description": "On-device OCR converts printed text into readable content.",
+    "points": [
+      "Lighting and framing guidance",
+      "Explicit Scan action",
+      "Temporary capture deleted after OCR"
+    ],
+    "narration": [
+      "To read print, the user opens Scan Document from Modes, aims at the page, and chooses Scan when ready.",
+      "Local text recognition extracts the words for the spoken reader.",
+      "The demonstration uses synthetic print. Camera images are never sent to an AI provider."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "08_scanner_entry",
+        "targets": [
+          [
+            1,
+            "Open Document Scanner"
+          ]
+        ]
+      },
+      {
+        "at": 4,
+        "capture": "09_scanner",
+        "targets": [
+          [
+            7,
+            "Scan"
+          ]
+        ]
+      },
+      {
+        "at": 13,
+        "capture": "10_reader",
+        "clip": "ocr_transition",
+        "targets": []
+      }
+    ],
+    "note": "Synthetic sample page • on-device text recognition"
+  },
+  {
+    "duration": 22,
+    "eyebrow": "05  /  CONTROL THE READER",
+    "title": "Read at\nyour own pace.",
+    "description": "Touch and contextual voice actions control the same reader.",
+    "points": [
+      "Pause, repeat, and navigate lines",
+      "Spelling and reading-speed tools",
+      "Scan again returns to framing"
+    ],
+    "narration": [
+      "After scanning, the reader can speak the document aloud.",
+      "The user can pause, repeat, move between reading lines, spell words, and change reading speed.",
+      "Scan Again returns to framing and waits for another explicit scan.",
+      "Ask AI first creates an editable text draft; sending it is a separate choice."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "10_reader",
+        "targets": [
+          [
+            1,
+            "Start Reading"
+          ],
+          [
+            4,
+            "next document"
+          ],
+          [
+            7,
+            "Repeat current"
+          ],
+          [
+            10,
+            "Spell out"
+          ]
+        ]
+      },
+      {
+        "at": 12,
+        "capture": "10_reader",
+        "targets": [
+          [
+            13,
+            "Set study"
+          ],
+          [
+            15,
+            "Set normal"
+          ]
+        ]
+      },
+      {
+        "at": 17,
+        "capture": "11_reader_actions_full",
+        "targets": [
+          [
+            17,
+            "Read from line 2"
+          ],
+          [
+            19,
+            "Review scanned"
+          ]
+        ]
+      }
+    ],
+    "note": "Real synthetic OCR • narration added; emulator speech engine unavailable"
+  },
+  {
+    "duration": 18,
+    "eyebrow": "06  /  LOCAL APP CONTROLS",
+    "title": "Use your voice.\nKeep control local.",
+    "description": "Approved app commands use deterministic routing.",
+    "points": [
+      "Foreground “Hey Vision AI” session",
+      "Typed or spoken app commands",
+      "Goodbye ends the command session"
+    ],
+    "narration": [
+      "For hands-free operation, the open app supports Hey Vision AI and local commands for navigation, settings, and reader controls.",
+      "Typed commands offer another route.",
+      "These approved actions execute on the phone. Say goodbye to end the active command session."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "12_assistant",
+        "targets": [
+          [
+            1,
+            "Open text input"
+          ]
+        ]
+      },
+      {
+        "at": 6,
+        "capture": "12_assistant_typed",
+        "targets": [
+          [
+            7,
+            "battery status"
+          ],
+          [
+            11,
+            "Send typed"
+          ]
+        ]
+      },
+      {
+        "at": 13,
+        "capture": "12_assistant_result",
+        "targets": []
+      }
+    ],
+    "note": "Local command interface shown • speech recognition not benchmarked"
+  },
+  {
+    "duration": 16,
+    "eyebrow": "07  /  OPTIONAL WEARABLE",
+    "title": "Connect a\nRaspberry Pi cap.",
+    "description": "An optional private-network workflow extends camera placement.",
+    "points": [
+      "Phone hotspot or private LAN",
+      "Discover, pair, connect, and start",
+      "Pi detection; phone priority speech"
+    ],
+    "narration": [
+      "The optional wearable uses a Raspberry Pi camera on a private network or phone hotspot.",
+      "The user discovers the device, establishes trust, and connects to start.",
+      "The Pi detects locally and sends compact alerts for phone speech. Physical hardware acceptance remains pending."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "13_wearable",
+        "targets": [
+          [
+            1,
+            "Connect securely"
+          ],
+          [
+            6,
+            "Search the local"
+          ],
+          [
+            11,
+            "Connection options"
+          ]
+        ]
+      }
+    ],
+    "note": "Connection interface only • no connected Pi demonstrated"
+  },
+  {
+    "duration": 17,
+    "eyebrow": "08  /  OPTIONAL SMART AI",
+    "title": "Ask a question.\nChoose what to send.",
+    "description": "Conversation uses an explicitly paired laptop.",
+    "points": [
+      "Local Ollama reasoning",
+      "Optional owner-enabled Gemini text",
+      "Core assistance stays independent"
+    ],
+    "narration": [
+      "Smart AI adds general questions through an explicitly paired laptop running local Ollama.",
+      "An owner-enabled Gemini option accepts text only, with local fallback.",
+      "Pairing is optional: object awareness, document reading, and local app controls remain independent of this conversation service."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "12_assistant",
+        "targets": [
+          [
+            1,
+            "Connect to the laptop assistant"
+          ]
+        ]
+      },
+      {
+        "at": 5,
+        "capture": "14_smart_ai_connection",
+        "targets": [
+          [
+            6,
+            "Emulator ("
+          ],
+          [
+            11,
+            "Wi-Fi ("
+          ]
+        ]
+      }
+    ],
+    "note": "Optional setup interface • no laptop reply shown in this recording"
+  },
+  {
+    "duration": 12,
+    "eyebrow": "USER JOURNEY  /  COMPLETE",
+    "title": "More information.\nMore user control.",
+    "description": "Open → personalize → detect or read → pause and stop.",
+    "points": [
+      "Core processing stays local",
+      "Accessible touch and voice controls",
+      "An additional awareness aid"
+    ],
+    "narration": [
+      "The journey is simple: open, personalize, detect or read, then pause or stop when finished.",
+      "AI Blind Assistant supplements a white cane, guide dog, and user judgment. It never guarantees a clear path."
+    ],
+    "screens": [
+      {
+        "at": 0,
+        "capture": "01_home",
+        "targets": []
+      }
+    ],
+    "note": "Assistive aid • not a substitute for established mobility support"
+  }
+]

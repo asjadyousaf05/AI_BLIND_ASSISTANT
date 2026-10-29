@@ -1,0 +1,172 @@
+[
+  {
+    "label": "Home",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Home",
+    "bounds": [
+      301,
+      78,
+      419,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Open User Guide",
+    "bounds": [
+      608,
+      56,
+      704,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "AI Blind Assistant status icon",
+    "bounds": [
+      48,
+      220,
+      176,
+      348
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Vision AI",
+    "bounds": [
+      208,
+      208,
+      435,
+      272
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Offline Mobile Mode is ready for on-device object detection.",
+    "bounds": [
+      208,
+      280,
+      672,
+      360
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Status: Mobile assistance: Idle\nMOBILE ASSISTANCE: IDLE",
+    "bounds": [
+      48,
+      408,
+      672,
+      464
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Current mode: Mobile Mode\nCURRENT MODE\nMobile Mode",
+    "bounds": [
+      48,
+      504,
+      672,
+      676
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Assistance: Idle\nASSISTANCE\nIdle",
+    "bounds": [
+      48,
+      700,
+      672,
+      872
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Open Mobile Mode to start camera and object detection assistance.",
+    "bounds": [
+      48,
+      920,
+      672,
+      1032
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Stop assistance unavailable because no assistance session is active.",
+    "bounds": [
+      48,
+      1056,
+      672,
+      1168
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Open Mode Selection",
+    "bounds": [
+      48,
+      1216,
+      672,
+      1328
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Open Raspberry Pi Mode",
+    "bounds": [
+      48,
+      1352,
+      672,
+      1392
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Home\nTab 1 of 4",
+    "bounds": [
+      0,
+      1392,
+      180,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Modes\nTab 2 of 4",
+    "bounds": [
+      180,
+      1392,
+      360,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Wearable\nTab 3 of 4",
+    "bounds": [
+      360,
+      1392,
+      540,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Settings\nTab 4 of 4",
+    "bounds": [
+      540,
+      1392,
+      720,
+      1552
+    ],
+    "clickable": true
+  }
+]

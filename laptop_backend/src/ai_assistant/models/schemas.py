@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 
 class PairRequest(BaseModel):
-    pairing_code: str = Field(default="", max_length=64)
+    pairing_code: str = Field(..., min_length=1, max_length=64)
 
 
 class PairResponse(BaseModel):
@@ -77,6 +77,7 @@ class AssistantResponseSchema(BaseModel):
     tool_call: ToolCallSchema | None = None
     requires_confirmation: bool = False
     confirmation_prompt: str | None = None
+    user_transcript: str | None = None
 
 
 class ToolResultSchema(BaseModel):

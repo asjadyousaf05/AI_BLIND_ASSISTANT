@@ -59,7 +59,7 @@ class StartupScreen extends StatelessWidget {
           icon: AppIcons.cloudOff,
           title: 'Offline and private',
           description:
-              'Camera frames stay on this device. The app does not use cloud processing, analytics, upload, or video recording.',
+              'Camera frames stay on the phone or Pi that captures them. Detection is offline. Optional Smart AI can send conversation text after setup. No analytics or video recording.',
         ),
         const SizedBox(height: AppSpacing.space8),
         PrimaryActionButton(

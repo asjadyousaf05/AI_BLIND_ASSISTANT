@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.BatteryManager
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.core.app.ActivityCompat
@@ -24,6 +25,7 @@ class MainActivity : FlutterActivity() {
     private var inferenceHandler: InferenceHandler? = null
     private var wearablePlatformHandler: WearablePlatformHandler? = null
     private var assistantAudioRecorderHandler: AssistantAudioRecorderHandler? = null
+    private var smartAiRecordingCueHandler: SmartAiRecordingCueHandler? = null
     private var onDeviceSpeechRecognizerHandler: OnDeviceSpeechRecognizerHandler? = null
     private var porcupineWakeHandler: PorcupineWakeHandler? = null
 
@@ -34,6 +36,17 @@ class MainActivity : FlutterActivity() {
         // stays available. Android automatically ignores this window flag once
         // the app is backgrounded, so it does not create a background service.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ai_blind_assistant/device_status")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "batteryPercentage") {
+                    val manager = getSystemService(BATTERY_SERVICE) as? BatteryManager
+                    val percentage = manager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                    result.success(percentage?.takeIf { it in 0..100 })
+                } else {
+                    result.notImplemented()
+                }
+            }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -82,6 +95,10 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AUDIO_RECORDER_CHANNEL)
             .setMethodCallHandler(assistantAudioRecorderHandler)
 
+        smartAiRecordingCueHandler = SmartAiRecordingCueHandler(applicationContext)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ai_blind_assistant/smart_ai_recording_cue")
+            .setMethodCallHandler(smartAiRecordingCueHandler)
+
         val onDeviceSpeechChannel =
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ON_DEVICE_SPEECH_CHANNEL)
         onDeviceSpeechRecognizerHandler =
@@ -106,7 +123,21 @@ class MainActivity : FlutterActivity() {
         // Keep a reference so it can be disposed in onDestroy.
     }
 
+    override fun onResume() {
+        super.onResume()
+        smartAiRecordingCueHandler?.setForeground(true)
+        onDeviceSpeechRecognizerHandler?.setForeground(true)
+    }
+
+    override fun onPause() {
+        smartAiRecordingCueHandler?.setForeground(false)
+        onDeviceSpeechRecognizerHandler?.setForeground(false)
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        smartAiRecordingCueHandler?.setForeground(false)
+        smartAiRecordingCueHandler = null
         porcupineWakeHandler?.dispose()
         porcupineWakeHandler = null
         inferenceHandler?.close()

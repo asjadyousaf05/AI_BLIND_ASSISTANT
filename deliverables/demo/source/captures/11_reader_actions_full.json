@@ -1,0 +1,132 @@
+[
+  {
+    "label": "Document Scanner",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Go back from Document Scanner",
+    "bounds": [
+      8,
+      56,
+      104,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Document Scanner",
+    "bounds": [
+      172,
+      78,
+      548,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Read from line 1: Al BLIND ASSISTANT Welcome to the document reader.",
+    "bounds": [
+      48,
+      160,
+      672,
+      248
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Read from line 2: Your appointment is on Monday.",
+    "bounds": [
+      48,
+      264,
+      672,
+      376
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Read from line 3: Please arrive at ten in the morning.",
+    "bounds": [
+      48,
+      392,
+      672,
+      536
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Read from line 4: Bring your reference number.",
+    "bounds": [
+      48,
+      552,
+      672,
+      664
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Read from line 5: The reception desk is on the left.",
+    "bounds": [
+      48,
+      680,
+      672,
+      792
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Read from line 6: This is a synthetic demo p",
+    "bounds": [
+      48,
+      808,
+      672,
+      920
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Read document again",
+    "bounds": [
+      48,
+      952,
+      672,
+      1064
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Copy document text",
+    "bounds": [
+      48,
+      1080,
+      672,
+      1192
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Review scanned document with Vision AI",
+    "bounds": [
+      48,
+      1208,
+      672,
+      1320
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Scan another document, Returns to the camera to scan a new page.",
+    "bounds": [
+      48,
+      1344,
+      672,
+      1504
+    ],
+    "clickable": true
+  }
+]

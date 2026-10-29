@@ -31,7 +31,11 @@ abstract final class AppRouter {
       RoutePaths.aboutSafety => const AboutSafetyScreen(),
       RoutePaths.permissions => const PermissionsScreen(),
       RoutePaths.help => const HelpScreen(),
-      RoutePaths.assistant => const AssistantScreen(),
+      RoutePaths.assistant => AssistantScreen(
+        initialDraft: settings.arguments is String
+            ? settings.arguments! as String
+            : null,
+      ),
       RoutePaths.assistantConnection => const AssistantConnectionScreen(),
       RoutePaths.assistantSettings => const AssistantSettingsScreen(),
       RoutePaths.ocrScanner => const OcrScannerScreen(),

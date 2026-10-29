@@ -1,4 +1,10 @@
+import 'package:ai_blind_assistant/app/assistant_providers.dart';
+import '../features/assistant/assistant_controller_test.dart'
+    show FakeAssistantCredentialRepository;
+import '../helpers/gemini_fakes.dart';
 import 'dart:async';
+import 'package:ai_blind_assistant/app/smart_ai_cloud_providers.dart';
+import '../helpers/smart_ai_cloud_fakes.dart';
 
 import 'package:ai_blind_assistant/app/app.dart';
 import 'package:ai_blind_assistant/app/assistance_controller.dart';
@@ -321,6 +327,20 @@ class _RouteHarness extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
+      overrides: [
+        assistantCredentialRepositoryProvider.overrideWithValue(
+          FakeAssistantCredentialRepository(),
+        ),
+        geminiConfigurationRepositoryProvider.overrideWithValue(
+          FakeGeminiConfigurationRepository(),
+        ),
+        smartAiAudioCoordinatorProvider.overrideWithValue(
+          FakeSmartAiAudioCoordinator([]),
+        ),
+        smartAiCloudConfigurationRepositoryProvider.overrideWithValue(
+          FakeSmartAiConfigurationRepository(),
+        ),
+      ],
       child: MaterialApp(
         initialRoute: initialRoute,
         onGenerateRoute: AppRouter.onGenerateRoute,

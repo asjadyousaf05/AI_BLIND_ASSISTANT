@@ -45,6 +45,92 @@ void main() {
     expect(availability.bundledOfflineAvailable, isTrue);
   });
 
+  test('resume requires an affirmative native microphone result', () async {
+    var ready = false;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'resumeHandsFree');
+          expect(call.arguments, {'acceptNextCommand': true});
+          return ready;
+        });
+    await expectLater(
+      service.resumeHandsFree(acceptNextCommand: true),
+      throwsA(isA<OnDeviceSpeechRecognitionException>()),
+    );
+    ready = true;
+    await service.resumeHandsFree(acceptNextCommand: true);
+  });
+
+  test(
+    'resume surfaces platform failures instead of claiming listening',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async {
+            throw PlatformException(
+              code: 'resume_failed',
+              message: 'Microphone unavailable.',
+            );
+          });
+      await expectLater(
+        service.resumeHandsFree(),
+        throwsA(
+          isA<OnDeviceSpeechRecognitionException>().having(
+            (e) => e.code,
+            'code',
+            'resume_failed',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'missing resume capability fails while optional ready feedback is harmless',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (_) async => throw MissingPluginException(),
+          );
+      await expectLater(
+        service.resumeHandsFree(),
+        throwsA(isA<OnDeviceSpeechRecognitionException>()),
+      );
+      await service.playListeningReadyCue();
+    },
+  );
+
+  test(
+    'reader candidate claim uses the current native candidate identifier',
+    () async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return call.method == 'acceptReaderCommandCandidate' &&
+                call.arguments['candidateId'] == 'current';
+          });
+      await service.setReaderPlaybackActive(true);
+      expect(await service.acceptReaderCommandCandidate('expired'), isFalse);
+      expect(await service.acceptReaderCommandCandidate('current'), isTrue);
+      await service.setReaderPlaybackActive(false);
+      expect(calls.first.arguments, {'active': true});
+      expect(calls.last.arguments, {'active': false});
+    },
+  );
+
+  test(
+    'unsupported reader interruption capability cannot authorize a command',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (_) async => throw MissingPluginException(),
+          );
+      expect(await service.acceptReaderCommandCandidate('old'), isFalse);
+    },
+  );
+
   test('starts and returns only the in-memory transcript result', () async {
     final calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -95,6 +181,43 @@ void main() {
               ),
         ),
       );
+    },
+  );
+  test(
+    'Smart AI goodbye bridge emits only while its foreground capability is enabled',
+    () async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return null;
+          });
+      var count = 0;
+      final sub = service.smartAiGoodbyes.listen((_) => count++);
+      Future<void> emit() async {
+        ServicesBinding.instance.channelBuffers.push(
+          channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            const MethodCall('onSmartAiGoodbye'),
+          ),
+          (_) {},
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      await emit();
+      expect(count, 0);
+      await service.setSmartAiControlsActive(true);
+      await emit();
+      expect(count, 1);
+      await service.setSmartAiControlsActive(false);
+      await emit();
+      expect(count, 1);
+      expect(calls.map((c) => c.arguments), [
+        {'active': true},
+        {'active': false},
+      ]);
+      await sub.cancel();
     },
   );
 }

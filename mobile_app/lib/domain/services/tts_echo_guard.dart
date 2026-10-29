@@ -1,9 +1,10 @@
-import 'dart:math' as math;
-
-/// Component that tracks live TTS speech output to guard against self-echo ASR triggers.
+/// In-memory textual protection alongside Android's acoustic echo canceler.
+/// Speaker recognition may arrive after a TTS sentence has already finished.
 class TtsEchoGuard {
-  TtsEchoGuard();
+  TtsEchoGuard({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
 
+  final DateTime Function() _clock;
+  final List<({String text, DateTime ended})> _recent = [];
   String? _activeUtteranceId;
   String? _activeSentenceId;
   String _activeSentenceText = '';
@@ -11,7 +12,6 @@ class TtsEchoGuard {
   int _activeRangeStart = 0;
   int _activeRangeEnd = 0;
   int _playbackGeneration = 0;
-  DateTime? _lastRangeTimestamp;
   bool _isSpeaking = false;
 
   String? get activeUtteranceId => _activeUtteranceId;
@@ -23,13 +23,13 @@ class TtsEchoGuard {
   int get playbackGeneration => _playbackGeneration;
   bool get isSpeaking => _isSpeaking;
 
-  /// Notifies the guard that a new sentence utterance has started speaking.
   void onTtsStart({
     required String utteranceId,
     required String sentenceId,
     required String sentenceText,
     required int generation,
   }) {
+    if (_isSpeaking) _rememberActive();
     _activeUtteranceId = utteranceId;
     _activeSentenceId = sentenceId;
     _activeSentenceText = sentenceText;
@@ -37,11 +37,9 @@ class TtsEchoGuard {
     _activeRangeStart = 0;
     _activeRangeEnd = 0;
     _playbackGeneration = generation;
-    _lastRangeTimestamp = DateTime.now();
     _isSpeaking = true;
   }
 
-  /// Updates the currently spoken character range and word token within the active sentence.
   void onTtsRange({
     required String utteranceId,
     required int rangeStart,
@@ -49,122 +47,77 @@ class TtsEchoGuard {
     required String word,
     required int generation,
   }) {
-    if (generation != _playbackGeneration) return;
-    _activeUtteranceId = utteranceId;
+    if (!_owns(utteranceId, generation) || !_isSpeaking) return;
     _activeRangeStart = rangeStart;
     _activeRangeEnd = rangeEnd;
     _activeWordText = word;
-    _lastRangeTimestamp = DateTime.now();
   }
 
-  /// Notifies the guard that the current sentence utterance has finished speaking.
   void onTtsDone({required String utteranceId, required int generation}) {
-    if (generation != _playbackGeneration) return;
-    _isSpeaking = false;
-    _activeWordText = '';
+    if (!_owns(utteranceId, generation)) return;
+    onTtsStop();
   }
 
-  /// Notifies the guard that TTS was stopped or interrupted.
   void onTtsStop() {
+    if (_isSpeaking) _rememberActive();
     _isSpeaking = false;
     _activeWordText = '';
   }
 
-  /// Determines whether a recognized bare command is likely acoustic self-echo from the phone's speaker.
-  ///
-  /// Commands delivered with an intentional wake phrase (e.g. "Vision stop", "Hey Vision")
-  /// are intentional human invocations and are never flagged as self-echo.
+  bool _owns(String utteranceId, int generation) =>
+      generation == _playbackGeneration && utteranceId == _activeUtteranceId;
+
+  void _rememberActive() {
+    if (_activeSentenceText.isEmpty) return;
+    _recent.add((text: _activeSentenceText, ended: _clock()));
+    if (_recent.length > 4) _recent.removeAt(0);
+  }
+
+  static List<String> _tokens(String text) => RegExp(r'[a-z0-9]+')
+      .allMatches(text.toLowerCase())
+      .map((match) => match[0]!)
+      .toList(growable: false);
+
+  Iterable<String> _outputs(Duration window) sync* {
+    if (_isSpeaking) yield _activeSentenceText;
+    final now = _clock();
+    _recent.removeWhere((item) => now.difference(item.ended) > window);
+    for (final item in _recent) {
+      yield item.text;
+    }
+  }
+
   bool isSelfEcho(
     String command, {
-    Duration echoWindow = const Duration(milliseconds: 750),
+    Duration echoWindow = const Duration(milliseconds: 1500),
   }) {
-    if (!_isSpeaking) return false;
-
-    final norm = command.trim().toLowerCase();
-    if (norm.isEmpty) return false;
-
-    // Wake words ("vision", "hey vision") are intentional user invocations
-    if (norm == 'vision' ||
-        norm == 'hey vision' ||
-        norm.startsWith('vision ') ||
-        norm.startsWith('hey vision ')) {
-      return false;
-    }
-
-    // 1. Check if the active word being pronounced matches the command
-    final activeWordNorm = _activeWordText.toLowerCase().replaceAll(
-      RegExp(r'[^a-z0-9]'),
-      '',
+    final wanted = _tokens(
+      command.replaceAll(RegExp(r'\[unk\]', caseSensitive: false), ' '),
     );
-    final cmdNorm = norm.replaceAll(RegExp(r'[^a-z0-9]'), '');
-    if (activeWordNorm.isNotEmpty && activeWordNorm == cmdNorm) {
-      return true;
-    }
-
-    // 2. Check localized neighborhood in the active sentence around the current TTS playback head
-    if (_activeSentenceText.isNotEmpty) {
-      final sentLower = _activeSentenceText.toLowerCase();
-      final windowStart = math.max(0, _activeRangeStart - 20);
-      final windowEnd = math.min(sentLower.length, _activeRangeEnd + 25);
-      final neighborhood = sentLower.substring(windowStart, windowEnd);
-
-      if (neighborhood.contains(norm)) {
+    if (wanted.isEmpty) return false;
+    for (final output in _outputs(echoWindow)) {
+      final words = _tokens(output);
+      // A focused decoder can omit intervening words from ordinary narration.
+      // Match whole tokens in order, including punctuation and sentence tails.
+      var index = 0;
+      for (final word in words) {
+        if (word == wanted[index] && ++index == wanted.length) return true;
+      }
+      // Spelling output may be transcribed as a joined word by the decoder.
+      if (words.isNotEmpty &&
+          words.every((word) => word.length == 1) &&
+          words.join().contains(wanted.join())) {
         return true;
       }
     }
-
-    // 3. Check if the entire active sentence contains the command word while TTS is actively emitting sound
-    final wordsInSentence = _activeSentenceText
-        .toLowerCase()
-        .split(RegExp(r'[^a-z0-9]+'))
-        .where((w) => w.isNotEmpty);
-    if (wordsInSentence.contains(cmdNorm)) {
-      final elapsed = DateTime.now().difference(
-        _lastRangeTimestamp ?? DateTime.now(),
-      );
-      if (elapsed <= echoWindow) {
-        return true;
-      }
-    }
-
     return false;
   }
 
-  /// Determines whether an active TTS sentence is likely to trigger a false wake event.
-  ///
-  /// Checks if the TTS is currently speaking and if the active sentence contains
-  /// the word "vision".
   bool isWakeWordEcho({
-    Duration echoWindow = const Duration(milliseconds: 750),
-  }) {
-    if (!_isSpeaking) return false;
-
-    // Check localized neighborhood around the playback head
-    if (_activeSentenceText.isNotEmpty) {
-      final sentLower = _activeSentenceText.toLowerCase();
-      final windowStart = math.max(0, _activeRangeStart - 20);
-      final windowEnd = math.min(sentLower.length, _activeRangeEnd + 25);
-      final neighborhood = sentLower.substring(windowStart, windowEnd);
-
-      if (neighborhood.contains('vision')) {
-        return true;
-      }
-    }
-
-    // Check entire sentence if recently updated
-    final wordsInSentence = _activeSentenceText
-        .toLowerCase()
-        .split(RegExp(r'[^a-z0-9]+'))
-        .where((w) => w.isNotEmpty);
-    if (wordsInSentence.contains('vision')) {
-      final elapsed = DateTime.now().difference(
-        _lastRangeTimestamp ?? DateTime.now(),
-      );
-      if (elapsed <= echoWindow) {
-        return true;
-      }
-    }
-
-    return false;
-  }
+    Duration echoWindow = const Duration(milliseconds: 1500),
+  }) => _outputs(echoWindow).any(
+    (output) => RegExp(
+      r'\b(?:hey|hi|hello|hay|listen) (?:vision|version|visual) (?:ai|a i|i|eye|aye)\b',
+    ).hasMatch(_tokens(output).join(' ')),
+  );
 }

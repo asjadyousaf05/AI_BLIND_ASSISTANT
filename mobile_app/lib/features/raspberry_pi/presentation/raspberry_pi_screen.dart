@@ -67,7 +67,7 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
       children: [
         Center(
           child: BrandIconBadge(
-            icon: AppIcons.bluetooth,
+            icon: AppIcons.connection,
             label: '${AppStrings.raspberryPiTitle} icon',
             size: 96,
             filled: connected,
@@ -141,73 +141,13 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
             description: warning,
           ),
         ],
-        const SizedBox(height: AppSpacing.space6),
-        _SectionHeading(
-          title: 'Find your wearable',
-          description:
-              'The configured Pi address is ${WearableDefaults.host}. Search local discovery or use the address below.',
-        ),
-        const SizedBox(height: AppSpacing.space3),
-        PrimaryActionButton(
-          key: AppKeys.raspberryPiScanButton,
-          label: phase == WearableConnectionPhase.discovering
-              ? 'Searching…'
-              : 'Search Local Network',
-          icon: AppIcons.refresh,
-          semanticLabel: phase == WearableConnectionPhase.discovering
-              ? 'Searching the local network for Raspberry Pi wearables'
-              : 'Search the local network for a Raspberry Pi wearable',
-          onPressed: viewState.canRunAction && !connected
-              ? controller.discover
-              : null,
-        ),
-        if (session.discoveredDevices.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.space4),
-          _DiscoveredDeviceList(
-            devices: session.discoveredDevices,
-            selectedDevice: selectedDevice,
-            enabled: viewState.canRunAction && !connected,
-            onSelected: controller.selectDevice,
-          ),
-        ],
-        const SizedBox(height: AppSpacing.space4),
-        _ManualAddressForm(
-          formKey: _manualFormKey,
-          hostController: _hostController,
-          portController: _portController,
-          enabled: viewState.canRunAction && !connected,
-          onUseAddress: () => _selectManualAddress(controller),
-        ),
-        const SizedBox(height: AppSpacing.space3),
-        const FeatureNoteCard(
-          icon: AppIcons.info,
-          title: 'Connecting to your Pi',
-          description:
-              'On the same Wi-Fi as the Pi? '
-              'Leave the address as rpi3-ml.local — '
-              'your phone finds the Pi automatically. '
-              'On a different or public network, '
-              'run the reverse_tunnel.sh script on the Pi first, '
-              "then enter your laptop's local IP address here instead.",
-        ),
-        if (selectedDevice != null) ...[
-          const SizedBox(height: AppSpacing.space5),
-          _SelectedDeviceCard(device: selectedDevice),
-        ],
-
         if (!connected) ...[
           const SizedBox(height: AppSpacing.space5),
-          const FeatureNoteCard(
-            icon: AppIcons.connection,
-            title: 'One-tap trusted connection',
-            description:
-                'No pairing code or Raspberry Pi password is needed. On first use, an unclaimed Pi trusts this phone and Android Keystore protects its credential. Use only a private network you trust.',
-          ),
-          const SizedBox(height: AppSpacing.space3),
           PrimaryActionButton(
             key: AppKeys.raspberryPiConnectButton,
             label:
-                phase == WearableConnectionPhase.enrolling ||
+                viewState.actionInProgress ||
+                    phase == WearableConnectionPhase.enrolling ||
                     phase == WearableConnectionPhase.connecting ||
                     phase == WearableConnectionPhase.authenticating ||
                     phase == WearableConnectionPhase.reconnecting
@@ -225,7 +165,109 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
                       : controller.connectAndStartAssistance
                 : null,
           ),
+          if (viewState.actionInProgress || phase.isBusy) ...[
+            const SizedBox(height: AppSpacing.space3),
+            SecondaryActionButton(
+              label: 'Cancel Connection',
+              icon: AppIcons.wifiOff,
+              semanticLabel: 'Cancel wearable search or connection',
+              onPressed: controller.disconnect,
+            ),
+          ],
         ],
+        const SizedBox(height: AppSpacing.space6),
+        if (!connected) ...[
+          _SectionHeading(
+            title: 'Phone hotspot connection',
+            description:
+                'Turn on this phone’s hotspot. Once the Pi has joined it, tap Connect & Start Detection. If search cannot find your Pi, use Connection options below.',
+          ),
+          const SizedBox(height: AppSpacing.space3),
+          SecondaryActionButton(
+            key: AppKeys.raspberryPiScanButton,
+            label: phase == WearableConnectionPhase.discovering
+                ? 'Searching…'
+                : 'Search Local Network',
+            icon: AppIcons.refresh,
+            semanticLabel: phase == WearableConnectionPhase.discovering
+                ? 'Searching the local network for Raspberry Pi wearables'
+                : 'Search the local network for a Raspberry Pi wearable',
+            onPressed: viewState.canRunAction && !connected
+                ? controller.discover
+                : null,
+          ),
+          if (session.discoveredDevices.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.space4),
+            _DiscoveredDeviceList(
+              devices: session.discoveredDevices,
+              selectedDevice: selectedDevice,
+              enabled: viewState.canRunAction && !connected,
+              onSelected: controller.selectDevice,
+            ),
+          ],
+          const SizedBox(height: AppSpacing.space4),
+          ExpansionTile(
+            title: const Text('Connection options'),
+            subtitle: const Text('Hotspot setup and manual local address'),
+            children: [
+              _ManualAddressForm(
+                formKey: _manualFormKey,
+                hostController: _hostController,
+                portController: _portController,
+                enabled: viewState.canRunAction,
+                onUseAddress: () => _selectManualAddress(controller),
+              ),
+              const SizedBox(height: AppSpacing.space3),
+              const FeatureNoteCard(
+                icon: AppIcons.info,
+                title: 'Phone hotspot setup',
+                description:
+                    'Turn on Personal Hotspot in Android Settings. Use 2.4 GHz and WPA2 for a Pi 3B. '
+                    'Configure the Pi to join once, and keep the hotspot on during Wearable Mode. '
+                    'If search is unavailable, enter rpi3-ml.local or the Pi’s current hotspot address.',
+              ),
+              const SizedBox(height: AppSpacing.space3),
+              const FeatureNoteCard(
+                icon: AppIcons.connection,
+                title: 'First connection',
+                description:
+                    'An unclaimed Pi trusts the first phone on your private network. '
+                    'Later connections reuse a credential protected by Android Keystore. '
+                    'Use a private network you trust.',
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: AppSpacing.space3),
+        const FeatureNoteCard(
+          icon: AppIcons.info,
+          title: 'Alerts play on this phone',
+          description:
+              'The Pi detects objects and sends compact alerts to this phone. '
+              'When Audio Alerts are on, the phone speaks the object name and direction while connected. '
+              'If the phone disconnects, the Pi uses its local speech fallback.',
+        ),
+        if (!appSettings.feedbackSettings.audioEnabled) ...[
+          const SizedBox(height: AppSpacing.space3),
+          const FeatureNoteCard(
+            icon: AppIcons.volume,
+            title: 'Object audio alerts are off',
+            description:
+                'Choose Audio or Audio and Vibration in Saved Settings to hear object names. You can still test the phone speaker below.',
+          ),
+        ],
+        const SizedBox(height: AppSpacing.space3),
+        SecondaryActionButton(
+          label: 'Test Phone Audio',
+          icon: AppIcons.volume,
+          semanticLabel: 'Play a test message through the phone speaker',
+          onPressed: viewState.canRunAction ? controller.testPhoneAudio : null,
+        ),
+        if (selectedDevice != null) ...[
+          const SizedBox(height: AppSpacing.space5),
+          _SelectedDeviceCard(device: selectedDevice),
+        ],
+
         if (connected) ...[
           const SizedBox(height: AppSpacing.space5),
           SecondaryActionButton(
@@ -234,7 +276,7 @@ class _RaspberryPiScreenState extends ConsumerState<RaspberryPiScreen> {
             icon: AppIcons.wifiOff,
             semanticLabel:
                 'Disconnect this phone without stopping wearable assistance',
-            onPressed: viewState.canRunAction ? controller.disconnect : null,
+            onPressed: controller.disconnect,
           ),
         ],
         const SizedBox(height: AppSpacing.space6),
@@ -463,8 +505,7 @@ class _DiscoveredDeviceList extends StatelessWidget {
                 : 'Found on local network',
             enabled: enabled,
             semanticLabel:
-                '${device.name}, local address ${device.host}, port ${device.port}, '
-                '${device == selectedDevice ? 'selected' : 'not selected'}',
+                'Select ${device.name}, local address ${device.host}, port ${device.port}',
             onTap: enabled ? () => onSelected(device) : null,
           ),
           const SizedBox(height: AppSpacing.space3),

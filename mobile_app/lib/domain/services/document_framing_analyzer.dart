@@ -36,18 +36,30 @@ class DocumentFramingAnalyzer {
     Uint8List yBytes, {
     required int width,
     required int height,
+    int? bytesPerRow,
+    int pixelStride = 1,
   }) {
-    if (yBytes.isEmpty || width <= 0 || height <= 0) {
+    final rowStride = bytesPerRow ?? width;
+    if (yBytes.isEmpty ||
+        width <= 0 ||
+        height <= 0 ||
+        pixelStride <= 0 ||
+        rowStride < (width - 1) * pixelStride + 1 ||
+        yBytes.length <
+            (height - 1) * rowStride + (width - 1) * pixelStride + 1) {
       return FramingCue.noDocument;
     }
 
     // 1. Overall luminance check
     int sumLuminance = 0;
     int sampleCount = 0;
-    final step = (yBytes.length ~/ 200).clamp(1, 400);
-    for (int i = 0; i < yBytes.length; i += step) {
-      sumLuminance += yBytes[i];
-      sampleCount++;
+    final sampleStepY = (height ~/ 15).clamp(1, 50);
+    final sampleStepX = (width ~/ 15).clamp(1, 50);
+    for (int y = 0; y < height; y += sampleStepY) {
+      for (int x = 0; x < width; x += sampleStepX) {
+        sumLuminance += yBytes[y * rowStride + x * pixelStride];
+        sampleCount++;
+      }
     }
     final avgLuminance = sampleCount > 0 ? sumLuminance / sampleCount : 128.0;
 
@@ -68,22 +80,21 @@ class DocumentFramingAnalyzer {
     final colWidth = width / 3.0;
 
     // Sample across grid rows and columns
-    final sampleStepY = (height ~/ 15).clamp(1, 50);
-    final sampleStepX = (width ~/ 15).clamp(1, 50);
-
     for (int y = sampleStepY; y < height - sampleStepY; y += sampleStepY) {
       final rowIndex = (y / rowHeight).floor().clamp(0, 2);
-      final rowOffset = y * width;
+      final rowOffset = y * rowStride;
 
       for (int x = sampleStepX; x < width - sampleStepX; x += sampleStepX) {
         final colIndex = (x / colWidth).floor().clamp(0, 2);
-        final pixelIndex = rowOffset + x;
+        final pixelIndex = rowOffset + x * pixelStride;
 
-        if (pixelIndex + 1 < yBytes.length &&
-            pixelIndex + width < yBytes.length) {
+        if (pixelIndex + pixelStride < yBytes.length &&
+            pixelIndex + rowStride < yBytes.length) {
           // Horizontal and vertical gradients (edges / text characters)
-          final gradX = (yBytes[pixelIndex + 1] - yBytes[pixelIndex]).abs();
-          final gradY = (yBytes[pixelIndex + width] - yBytes[pixelIndex]).abs();
+          final gradX = (yBytes[pixelIndex + pixelStride] - yBytes[pixelIndex])
+              .abs();
+          final gradY = (yBytes[pixelIndex + rowStride] - yBytes[pixelIndex])
+              .abs();
           final contrast = gradX + gradY;
 
           if (contrast > 15) {

@@ -16,6 +16,24 @@ from ai_blind_pi.security import (
 )
 
 
+@pytest.mark.parametrize(
+    "value,encoded",
+    [
+        (0.00001, "0.00001"),
+        (0.000001, "0.000001"),
+        (0.0000001, "1e-7"),
+        (1e16, "10000000000000000.0"),
+        (1e20, "100000000000000000000.0"),
+        (1e21, "1e+21"),
+        (-0.0, "-0.0"),
+        (0.45, "0.45"),
+    ],
+)
+def test_canonical_numbers_match_dart_json_vectors(value: float, encoded: str) -> None:
+    message = Envelope.create("device_health", {"value": value})
+    assert message.canonical_text("test-nonce").endswith(f'{{"value":{encoded}}}')
+
+
 def test_envelope_is_strict_and_hmac_is_nonce_bound() -> None:
     key = derive_auth_key("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")
     envelope = Envelope.create(

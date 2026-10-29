@@ -9,6 +9,7 @@ import math
 import re
 import uuid
 from dataclasses import dataclass, replace
+from decimal import Decimal
 from typing import Any
 
 from .models import now_iso, parse_utc_timestamp
@@ -90,6 +91,31 @@ def timestamp_to_ms(value: str) -> int:
 
 
 def _canonical_json(value: object) -> str:
+    # Dart's JSON encoder uses decimal notation for exponents -6 through 20.
+    # Python's default encoder switches at -4/16 and pads negative exponents,
+    # causing valid small box/health values to fail cross-language HMAC checks.
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("non-finite protocol number")
+        rendered = repr(value)
+        if "e" not in rendered:
+            return rendered
+        coefficient, raw_exponent = rendered.split("e")
+        exponent = int(raw_exponent)
+        if -6 <= exponent < 21:
+            decimal = format(Decimal(rendered), "f")
+            return decimal if "." in decimal else decimal + ".0"
+        return f"{coefficient}e{'+' if exponent >= 0 else ''}{exponent}"
+    if isinstance(value, dict):
+        return (
+            "{"
+            + ",".join(
+                f"{_canonical_json(key)}:{_canonical_json(value[key])}" for key in sorted(value)
+            )
+            + "}"
+        )
+    if isinstance(value, list):
+        return "[" + ",".join(_canonical_json(item) for item in value) + "]"
     return json.dumps(
         value,
         separators=(",", ":"),

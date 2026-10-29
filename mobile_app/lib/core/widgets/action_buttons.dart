@@ -39,6 +39,8 @@ class PrimaryActionButton extends StatelessWidget {
       button: true,
       enabled: onPressed != null,
       label: semanticLabel ?? label,
+      onTap: onPressed,
+      excludeSemantics: true,
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
@@ -99,6 +101,8 @@ class SecondaryActionButton extends StatelessWidget {
       button: true,
       enabled: onPressed != null,
       label: semanticLabel ?? label,
+      onTap: onPressed,
+      excludeSemantics: true,
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(

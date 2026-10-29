@@ -1,5 +1,169 @@
 # AI Blind Assistant Specification Baseline
 
+## Owner-approved Vision AI reliability refinement — 2026-10-21
+
+ADR-076 authorizes local listening recovery/readiness and conservative command
+handling for the owner's 2026-10-22 demo. Preserve foreground-only on-phone speech,
+deterministic controls, existing engines/models and all Smart AI provider/key/
+consent boundaries. Require truthful resume, bounded recovery, cancellation of
+stale starts, optional local readiness cues and an accessible restart. A command
+with missing-word markers or negation must not become a positive action. Keep
+ordinary listening paused during spoken feedback; document when to speak. Automated
+checks are separate from physical accent/noise/haptic/latency acceptance. Do not
+claim perfect or error-free recognition.
+
+## Owner-approved cross-phone Smart AI consistency — 2026-10-21
+
+ADR-075 keeps the circle visible on fresh phones before personal cloud setup.
+Disable question capture/submission until personal key entry and existing explicit
+provider-specific consent; keep local app commands, spoken setup guidance and cue
+testing available without an API. Existing saved Gemini/laptop modes are restored;
+fresh users may choose them explicitly. No key transfer/embedding or silent
+provider selection, and no Vision AI/native/model/network policy change.
+
+## Owner-approved Vision AI command feedback — 2026-10-21
+
+ADR-074 authorizes spoken progress and truthful outcomes for local Raspberry Pi
+connection/discovery and Mobile Mode startup. Resolve deterministic commands using
+the visible screen; support bounded polite navigation, open setting/about page,
+and Listen Vision AI. Smart AI's foreground idle/paused local listener accepts
+go back/go home without holding the circle or another wake. Explicit circle
+recording owns the microphone exclusively; ordinary local speech never starts a
+cloud interaction. Preserve all provider/key/audio bounds and offline vision.
+Previous Smart-AI-only change restrictions apply to their historical modules;
+this request explicitly extends the local Vision AI command path. Physical
+recognition/noise/output acceptance remains separate from software verification.
+
+## Owner-approved Smart AI listening cue — 2026-10-21
+
+ADR-073 refines only Smart AI's recording-ready feedback. After the microphone
+actually begins recording, emit one bounded accessibility vibration and a short
+local prompt chime, then the user speaks. Release-to-send, pause/resume, language
+and foreground local controls retain their approved behavior. The labelled test
+action checks both cues without recording or API use. Visible/spoken/TalkBack
+instructions explain the cue. Respect device media volume/routing/DND and expose
+actual cue-start failures without disabling recording. Cancel/submit/Activity
+pause/exit stop feedback; no background output or delayed replacement cleanup.
+This replaces the earlier 180 ms vibration-only adapter; it adds no cloud or
+Vision AI change. Owner will test the APK later; physical output is unverified.
+
+## Owner-approved Smart AI bilingual circle — 2026-10-20
+
+ADR-072 refines the configured foreground Smart AI view. Preserve the exact base
+prompt; a separate latest-turn language instruction and existing installed offline
+voices support English/Urdu replies. Automatic Whisper language identification
+can mishear short English speech as Urdu. Provide accessible Auto/English/Urdu
+choices; explicit choices set en/ur on the same transcription request and carry
+through to the answer. No retry, second provider or guarantee of automatic ASR.
+
+Hold the large circle one second, wait for its 180 ms listening pulse, speak and
+release to submit once. Tap a reply to pause/resume locally from its last reported
+word; hold again to interrupt. Named buttons/semantic tap/keyboard, spoken help,
+Test listening vibration and Back to Home provide accessible alternatives.
+The manual-capture cue is independent of obstacle-alert settings and changes no
+Vision AI preference. Early setup release, cancelled touches and backgrounding
+discard clips; existing 30-second capture and network bounds remain.
+
+After the initial 1.4.13 check, the owner explicitly authorizes local Vision AI
+to remain available alongside button-only Smart AI. Enable a foreground-only
+local exact goodbye Smart AI listener without a button or wake prefix. It needs
+no API. Release the native recognizer microphone during button capture, resume
+it afterwards and restore the saved hands-free preference on exit. A narrow
+button-mode guard prevents ordinary local speech from invoking the legacy Smart
+AI conversation path. Reject speaker echo and incidental mentions. Typed/recorded
+goodbye remain deterministic alternatives; recorded goodbye deletes its STT clip
+before interpretation. Restore audio and return through the existing Home route.
+This narrow shared-bridge/native-handler/kernel integration supersedes earlier
+screen-wide wake-pause/recorded-only-exit wording. It does not change Vision AI
+base command/wake grammars, detection models, resolver, backend or Pi; no cloud
+wake, background listener, camera upload or unprompted cloud request is allowed.
+
+## Owner-approved Groq speech and answers — 2026-10-19
+
+After AgentRouter returned `unauthorized client detected`, the owner explicitly
+selected "Use Groq for speech and answers". The foreground Smart AI pipeline
+may therefore send the transcript and the same bounded conversation history to
+`https://api.groq.com/openai/v1/chat/completions`, model `openai/gpt-oss-20b`,
+using the saved personal Groq key. Whisper large v3, the exact original system
+prompt, phone-local TTS, temporary-file cleanup and Vision AI isolation remain.
+Use low reasoning effort, exclude reasoning from returned speech, and cap
+generation at 512 completion tokens including internal reasoning.
+
+This is an explicit provider selection, never an automatic fallback. Renew the
+destination-specific in-app consent before saving; keep selection encrypted.
+Older configuration without a provider field stays AgentRouter until the owner
+selects otherwise. Groq mode requires no AgentRouter key and must never call
+AgentRouter. Free-plan access has provider/account quotas; no unlimited or
+guaranteed-latency claim. ADR-071 records the decision and live access evidence.
+
+## Owner-Authorized Smart AI Groq/AgentRouter Pipeline — 2026-10-19
+
+The owner explicitly requests foreground Smart AI speech capture → Groq Audio
+Transcription using `whisper-large-v3` → AgentRouter using `deepseek-v4-flash` →
+phone speech, while leaving Vision AI unchanged. This is an optional personal-
+key mode after explicit in-app audio/text destination disclosure and agreement.
+It alone supersedes older cloud-audio prohibitions. No existing Vision AI,
+wake recognizer, Mobile/Pi detection, OCR or backend provider is migrated.
+
+Use existing native 16 kHz mono AAC/M4A (accepted by Groq) with 30-second/4 MB
+caps; no extra conversion worker. Upload after Stop/Send or the recording cap.
+Delete the phone clip as soon as transcription finishes, including failure and
+cancellation paths. Provider retention is governed by their policies; local
+deletion must not be described as provider deletion. Keys are owner-entered,
+separately Keystore-encrypted, obscured and never bundled/logged. Recording is
+gesture-initiated and foreground-only. No background or cloud wake listening.
+
+Direct fixed HTTPS endpoints are Groq `/openai/v1/audio/transcriptions` and the
+owner-specified `https://agentrouter.org/v1/chat/completions`. Use the requested
+exact system prompt in ADR-070, limited text/history/output and async I/O.
+No model/host substitution, redirects, automatic retries or model tools.
+Deterministic local controls take priority after transcription; cloud responses
+are conversation only. Shared local audio ownership pauses wake listening only
+while this Smart AI screen is active and restores its saved preference on exit.
+Requests are sequential, cancellable and deadline-bounded, with late replies
+ignored. Core vision/offline behavior stays independent. This is file-based
+turn-taking; no full-duplex streaming or measured real-time latency is claimed.
+
+This mode takes precedence only on the Smart AI screen when configured;
+removing its keys restores the previous Gemini/laptop mode and preserves their
+credentials. Vision AI's existing command/conversation selection is unchanged.
+
+## Owner-Authorized Laptop-Free Text Assistant — 2026-10-18/19
+
+The owner requests optional API conversation without the laptop, alongside
+phone-hotspot Pi operation. Personal Gemini mode may send typed/unmatched
+phone-transcribed conversation text and at most ten recent conversation
+messages directly over HTTPS to Google's fixed Gemini endpoint after an
+explicit in-app disclosure and agreement. The owner supplies their own key;
+it is encrypted by Android Keystore through the existing secure-storage channel,
+never embedded in source/APK or sent to the laptop. Removal clears that key and
+the in-memory conversation while preserving Pi/laptop trust.
+
+This narrowly supersedes the backend-only API-key storage and laptop-only
+conversation rules. Gemini receives no camera frames or raw audio. Phone-local
+recognition and TTS support direct mode; laptop Whisper remains available only
+in the already-approved paired laptop mode. Deterministic app controls take
+priority and cloud output can never propose or execute tools. Direct mode has
+no automatic Ollama fallback without a reachable laptop; errors must say so
+truthfully. Core Mobile/Pi/OCR/control workflows remain independent and offline.
+Free-tier content-use and quota limits must be disclosed. This is personal-key
+operation, not authorization to distribute an application-wide client secret.
+
+## Owner-Authorized Smart AI Speech Amendment — 2026-10-16
+
+The owner explicitly selected: “Use paired-laptop Whisper for Smart AI speech;
+disclose it clearly and delete clips after processing.” In paired Smart AI,
+the foreground Speak button may record up to 30 seconds/4 MB and send temporary
+audio only to the authenticated private-LAN laptop for local Whisper. Disclose
+this before the control; remove phone and laptop clips after processing,
+including failed/cancelled sessions. Retention and audio logging are prohibited.
+
+This narrowly supersedes ADR-043's phone-only rule for paired manual Smart AI
+speech. Hands-free/wake speech, unpaired manual controls and core assistance
+stay phone-local. Camera frames and raw audio must never go to Gemini or any
+cloud service. Gemini may receive only permitted conversation text. Pairing,
+foreground-only capture and deterministic command/confirmation rules remain.
+
 ## Owner-Authorized Scope Amendment — 2026-08-14
 
 The owner explicitly authorized a foreground hands-free in-app voice assistant,

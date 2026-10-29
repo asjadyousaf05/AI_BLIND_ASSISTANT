@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../domain/enums/voice_runtime_state.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/assistant_session_controller.dart';
@@ -42,8 +43,21 @@ class AssistantSettingsScreen extends ConsumerWidget {
         const Text(
           'Listening and app-command recognition stay on this phone. The '
           'microphone pauses when the app goes to the background and while '
-          'the assistant speaks.',
+          'the assistant speaks. After “Listening” or a spoken result, wait '
+          'for the short tone and vibration, then say one short English '
+          'command. For example: “open settings” or “start mobile mode”. '
+          'The cue follows your phone’s media volume and haptic availability.',
         ),
+        if (appSettings.handsFreeAssistantEnabled &&
+            voiceState.runtimeState == VoiceRuntimeState.error) ...[
+          const SizedBox(height: AppSpacing.space3),
+          FilledButton.icon(
+            onPressed: () =>
+                ref.read(visionVoiceKernelProvider.notifier).restartHandsFree(),
+            icon: const Icon(Icons.mic),
+            label: const Text('Restart voice listening'),
+          ),
+        ],
         const Divider(height: AppSpacing.space8),
 
         // Conversation history management
@@ -58,28 +72,39 @@ class AssistantSettingsScreen extends ConsumerWidget {
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.history),
-          title: const Text('Load conversation history'),
+          title: Text(
+            state.usesDirectGemini
+                ? 'Conversation in memory'
+                : 'Load conversation history',
+          ),
           subtitle: Text(
             '${state.conversationHistory.length} messages in memory',
           ),
-          onTap: () async {
-            await controller.loadHistory();
-            if (context.mounted) {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('History loaded.')));
-            }
-          },
+          onTap: state.usesDirectGemini
+              ? null
+              : () async {
+                  await controller.loadHistory();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('History loaded.')),
+                    );
+                  }
+                },
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.delete_outline),
           title: const Text('Clear conversation history'),
-          subtitle: const Text(
-            'Clears this device and the paired backend session',
+          subtitle: Text(
+            state.usesDirectGemini
+                ? 'Clears conversation from this phone’s memory'
+                : 'Clears this device and the paired backend session',
           ),
           onTap: () async {
-            final confirm = await _confirmClear(context);
+            final confirm = await _confirmClear(
+              context,
+              state.usesDirectGemini,
+            );
             if (confirm == true) {
               await controller.clearHistory();
               if (context.mounted) {
@@ -108,9 +133,9 @@ class AssistantSettingsScreen extends ConsumerWidget {
           'App controls such as Mobile Mode, Raspberry Pi connection, and '
           'settings use a deterministic offline command router and never need '
           'Gemini or Ollama. Voice and typed controls run directly on this phone '
-          'using the bundled offline speech model. General conversation '
-          'prefers Gemini only '
-          'when an API key is configured and falls back to local Ollama. Gemini '
+          'using the bundled offline speech model. Personal Gemini mode needs '
+          'internet and no laptop. Laptop mode can use local Ollama offline '
+          'or Gemini with Ollama fallback. Gemini '
           'receives unmatched conversation text only—never app-command audio, '
           'camera frames, or raw audio.',
         ),
@@ -125,15 +150,18 @@ class AssistantSettingsScreen extends ConsumerWidget {
     );
   }
 
-  Future<bool?> _confirmClear(BuildContext context) {
+  Future<bool?> _confirmClear(BuildContext context, bool usesDirectGemini) {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Clear history?'),
-        content: const Text(
-          'This will delete the conversation history from this device and, '
-          'when paired, from the laptop backend. '
-          'This action cannot be undone.',
+        content: Text(
+          usesDirectGemini
+              ? 'This will clear the conversation from this phone’s memory. '
+                    'This action cannot be undone.'
+              : 'This will delete the conversation history from this device '
+                    'and, when paired, from the laptop backend. '
+                    'This action cannot be undone.',
         ),
         actions: [
           TextButton(

@@ -9,6 +9,7 @@ class AssistantResponse {
     this.toolCall,
     this.requiresConfirmation = false,
     this.confirmationPrompt,
+    this.userTranscript,
   });
 
   /// The human-readable response text to speak to the user.
@@ -26,6 +27,9 @@ class AssistantResponse {
   /// Spoken confirmation prompt if [requiresConfirmation] is true.
   final String? confirmationPrompt;
 
+  /// The transcript of what the user said, returned by the backend after audio transcription.
+  final String? userTranscript;
+
   bool get hasToolCall => toolCall != null;
 
   factory AssistantResponse.fromJson(Map<String, dynamic> json) {
@@ -34,6 +38,7 @@ class AssistantResponse {
       requestId: json['request_id'] as String? ?? '',
       requiresConfirmation: json['requires_confirmation'] as bool? ?? false,
       confirmationPrompt: json['confirmation_prompt'] as String?,
+      userTranscript: json['user_transcript'] as String?,
       toolCall: json['tool_call'] == null
           ? null
           : AssistantToolCall.fromJson(

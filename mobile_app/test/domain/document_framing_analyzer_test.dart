@@ -26,6 +26,22 @@ void main() {
       expect(cue, FramingCue.tooBright);
     });
 
+    test('ignores camera row padding when checking brightness', () {
+      final padded = Uint8List(120 * 16);
+      for (var y = 0; y < 120; y++) {
+        for (var x = 0; x < 12; x++) {
+          padded[y * 16 + x] = 10;
+        }
+        for (var x = 12; x < 16; x++) {
+          padded[y * 16 + x] = 255;
+        }
+      }
+      expect(
+        analyzer.analyzeYPlane(padded, width: 12, height: 120, bytesPerRow: 16),
+        FramingCue.tooDark,
+      );
+    });
+
     test('returns aligned when contrast is centered and well-distributed', () {
       final bytes = Uint8List(120 * 120);
       bytes.fillRange(0, bytes.length, 128);

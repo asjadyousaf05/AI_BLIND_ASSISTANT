@@ -92,6 +92,10 @@ class FeedbackPolicy:
         *,
         phone_connected: bool,
     ) -> tuple[Detection | None, str]:
+        if phone_connected or not settings.speech_enabled:
+            # Finish cancellation before emitting the first phone alert. A
+            # previously started fallback utterance must not overlap it.
+            await self.stop_local_speech()
         active_keys = {(item.class_id, item.direction) for item in detections}
         for key in list(self._stability):
             if key not in active_keys:
@@ -156,9 +160,12 @@ class FeedbackPolicy:
         close = " very close" if detection.relative_proximity == "very_close" else ""
         return f"{detection.class_name}{close} {suffix}"
 
-    async def close(self) -> None:
+    async def stop_local_speech(self) -> None:
         if self._speech_task:
             self._speech_task.cancel()
             await asyncio.gather(self._speech_task, return_exceptions=True)
             self._speech_task = None
+
+    async def close(self) -> None:
+        await self.stop_local_speech()
         await self.speech.close()

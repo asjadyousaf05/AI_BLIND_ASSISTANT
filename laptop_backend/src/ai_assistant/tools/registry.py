@@ -212,6 +212,8 @@ class ToolRegistry:
         tool_call_data = data.get("tool_call")
         requires_confirmation = bool(data.get("requires_confirmation", False))
         confirmation_prompt = data.get("confirmation_prompt")
+        if confirmation_prompt is not None and not isinstance(confirmation_prompt, str):
+            raise ToolError("Confirmation prompt must be text.")
 
         if tool_call_data is None:
             return ParsedModelResponse(
@@ -227,7 +229,7 @@ class ToolRegistry:
         if not isinstance(arguments, dict):
             raise ToolError(f"Tool '{tool_name}' arguments must be an object.")
 
-        if tool_name not in _TOOLS:
+        if not isinstance(tool_name, str) or tool_name not in _TOOLS:
             raise ToolError(f"Unknown tool '{tool_name}'. Only allow-listed tools may be called.")
 
         spec = _TOOLS[tool_name]
@@ -265,6 +267,20 @@ class ToolError(Exception):
 
 
 def _validate_argument_values(tool_name: str, arguments: dict) -> None:
+    # Structured model output remains untrusted even after JSON parsing.
+    for key, value in arguments.items():
+        if key in {"enabled", "include_completed"}:
+            if not isinstance(value, bool):
+                raise ToolError(f"Tool '{tool_name}' {key} must be a boolean.")
+        elif key not in {"seconds", "rate"} and (
+            not isinstance(value, str) or not value.strip() or len(value) > 4096
+        ):
+            raise ToolError(f"Tool '{tool_name}' {key} must be bounded nonempty text.")
+    if tool_name == "set_speech_rate" and (
+        not isinstance(arguments.get("rate"), str)
+        or arguments["rate"] not in {"slow", "normal", "fast"}
+    ):
+        raise ToolError("Speech rate must be slow, normal, or fast.")
     if tool_name == "change_detection_sensitivity" and arguments.get("level") not in {
         "low",
         "medium",

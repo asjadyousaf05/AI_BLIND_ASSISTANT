@@ -210,6 +210,19 @@ class ScheduleService:
             )
         return result.rowcount > 0
 
+    def update(self, user_id: str, entry_id: str, **changes: str) -> bool:
+        allowed = {"title", "starts_at", "ends_at", "description"}
+        changes = {key: value for key, value in changes.items() if key in allowed}
+        if not changes:
+            return False
+        assignments = ", ".join(f"{key} = ?" for key in changes)
+        with self._conn:
+            result = self._conn.execute(
+                f"UPDATE schedule_entries SET {assignments}, updated_at = ? WHERE id = ? AND user_id = ?",
+                (*changes.values(), _now_iso(), entry_id, user_id),
+            )
+        return result.rowcount > 0
+
 
 # ---------------------------------------------------------------------------
 # Preference service

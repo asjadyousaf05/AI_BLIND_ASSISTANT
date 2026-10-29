@@ -23,6 +23,17 @@ class AssistantAudioRecorderHandler(
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "getSmartAiCacheDirectory" -> {
+                try {
+                    val directory = File(context.cacheDir, "smart_ai_audio")
+                    if (!directory.isDirectory && !directory.mkdirs()) {
+                        throw IllegalStateException("Recording cache unavailable")
+                    }
+                    result.success(directory.absolutePath)
+                } catch (_: Exception) {
+                    result.error("recording_cache_unavailable", "Phone recording storage is unavailable.", null)
+                }
+            }
             "startRecording" -> startRecording(call, result)
             "stopRecording" -> stopRecording(result)
             "cancelRecording" -> cancelRecording(result)

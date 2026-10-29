@@ -13,9 +13,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--model",
-        choices=("tiny", "base", "small"),
-        default="base",
-        help="Model size to cache. Default: base.",
+        choices=("tiny", "base", "small", "medium"),
+        default="medium",
+        help="Model size to cache. Default: medium (accuracy priority for Smart AI).",
     )
     args = parser.parse_args()
     snapshot_download(repo_id=f"Systran/faster-whisper-{args.model}")

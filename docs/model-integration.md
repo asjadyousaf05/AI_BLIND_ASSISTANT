@@ -2,6 +2,11 @@
 
 Last reviewed: 2026-08-06
 
+Current-asset verification, 2026-10-12: the general-model SHA-256 below matches
+the packaged binary and generated metadata. Earlier export/parity evidence
+remains historical. For both current model paths and the owner's household
+fine-tuning contribution, see [PROJECT_PRESENTATION_BRIEF.md](PROJECT_PRESENTATION_BRIEF.md).
+
 ## Purpose and Safety Boundary
 
 Mobile Mode runs generic COCO object detection entirely on the Android device.
@@ -21,7 +26,7 @@ or user judgment.
 | Official weights URL | `https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.pt` |
 | Weights SHA-256 | `f59b3d833e2ff32e194b5bb8e08d211dc7c5bdf144b90d2c8412c47ccfc83b36` |
 | App model | `mobile_app/assets/models/yolov8n_float32.tflite` |
-| App model SHA-256 | `57a4e7d1aad385ed2d140d11da5406c1f0931d0696b1cc0dc73703051f545112` |
+| App model SHA-256 | `db0e5be08cf48ac4701ef8bb3953b8c7a15af237ec1fd6e4c76501168b6ef7db` |
 | App model size | 12,765,643 bytes |
 | Labels | `mobile_app/assets/models/coco_labels.txt` |
 | Labels SHA-256 | `bd17f1ee35d5f3c862a4894605855abbb9dda4b0621fdb0ac4c2c8c7bb7e730a` |
@@ -257,4 +262,3 @@ Still required on a physical Android phone:
 - measured inference latency/FPS, memory, battery, and thermal behavior;
 - repeated rapid start/stop and background/resume soak testing;
 - TalkBack and large-text manual validation.
-

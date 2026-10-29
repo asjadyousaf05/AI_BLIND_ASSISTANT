@@ -135,6 +135,7 @@ class ProtocolCodec {
       type: type,
       messageId: messageId,
       timestamp: timestamp,
+      encodedTimestamp: rawTimestamp,
       sequence: sequence,
       payload: Map<String, Object?>.unmodifiable(rawPayload),
       authenticationTag: authenticationTag as String?,
@@ -160,6 +161,13 @@ class ProtocolCodec {
       throw const WearableProtocolException(
         'invalid_timestamp',
         'Protocol timestamps must be UTC',
+      );
+    }
+    if (_parseUtcTimestamp(envelope.timestampText, 'timestamp') !=
+        envelope.timestamp) {
+      throw const WearableProtocolException(
+        'invalid_timestamp',
+        'Encoded timestamp does not match the parsed timestamp',
       );
     }
     if (envelope.sequence < 0) {

@@ -90,6 +90,10 @@ class WearableController extends Notifier<WearableControllerState> {
   bool _foreground = true;
   bool _settingsSyncInProgress = false;
   bool _phoneAnnouncementInProgress = false;
+  bool _phoneFeedbackStopping = false;
+  bool _disconnectInProgress = false;
+  int _phoneFeedbackGeneration = 0;
+  int _intentGeneration = 0;
   int _settingsRevision = 0;
   DateTime _settingsUpdatedAt = DateTime.now().toUtc();
 
@@ -109,6 +113,10 @@ class WearableController extends Notifier<WearableControllerState> {
 
     ref.listen<AppSettings>(appSettingsControllerProvider, (previous, next) {
       if (previous == next) return;
+      if (previous?.feedbackSettings.audioEnabled == true &&
+          !next.feedbackSettings.audioEnabled) {
+        unawaited(_stopPhoneFeedback());
+      }
       _settingsRevision++;
       _settingsUpdatedAt = DateTime.now().toUtc();
       if (state.session.phase.isConnected) {
@@ -128,8 +136,10 @@ class WearableController extends Notifier<WearableControllerState> {
 
   Future<void> discover() async {
     if (!_beginAction('Searching the local network for a wearable')) return;
+    final generation = _intentGeneration;
     try {
       final devices = await _repository.discover();
+      if (!_actionIsActive(generation)) return;
       _refreshFromRepository();
       if (devices.isEmpty) {
         _setLiveMessage(
@@ -143,6 +153,7 @@ class WearableController extends Notifier<WearableControllerState> {
         );
       }
     } on Object catch (error) {
+      if (!_actionIsActive(generation)) return;
       _recordActionFailure(
         WearableFailureKind.discovery,
         'discovery_failed',
@@ -150,7 +161,7 @@ class WearableController extends Notifier<WearableControllerState> {
         error,
       );
     } finally {
-      _endAction();
+      if (_actionIsActive(generation)) _endAction();
     }
   }
 
@@ -191,13 +202,16 @@ class WearableController extends Notifier<WearableControllerState> {
     if (!_beginAction('Enrolling this phone securely with the wearable')) {
       return;
     }
+    final generation = _intentGeneration;
     try {
       await _repository.enroll();
+      if (!_actionIsActive(generation)) return;
       _refreshFromRepository();
       _setLiveMessage(
         'This phone is now trusted. Its credential is protected by Android Keystore.',
       );
     } on Object catch (error) {
+      if (!_actionIsActive(generation)) return;
       _refreshFromRepository();
       final failure = state.session.failure;
       _recordActionFailure(
@@ -208,75 +222,131 @@ class WearableController extends Notifier<WearableControllerState> {
         error,
       );
     } finally {
-      _endAction();
+      if (_actionIsActive(generation)) _endAction();
     }
   }
 
-  Future<void> connect() async {
-    if (state.session.selectedDevice == null) {
-      _recordValidationFailure(
-        'Select a discovered wearable or enter its local address first.',
-      );
+  Future<void> connect() => _connectFlow(startDetection: false);
+
+  /// Holds one action guard across discovery, trust, settings, and detection.
+  Future<void> connectAndStartAssistance() =>
+      _connectFlow(startDetection: true);
+
+  Future<void> connectDefaultAndStartAssistance() =>
+      _connectFlow(startDetection: true, discoverIfNeeded: true);
+
+  Future<void> _connectFlow({
+    required bool startDetection,
+    bool discoverIfNeeded = false,
+  }) async {
+    if (!_foreground || !_beginAction('Connecting securely to the wearable')) {
       return;
     }
-    if (!_beginAction('Connecting securely to the wearable')) return;
+    final generation = _intentGeneration;
+    bool active() =>
+        !_disposed && _foreground && generation == _intentGeneration;
     _connectionDesired = true;
     try {
-      await _repository.connect();
+      await _repository.initialize();
+      if (!active()) return;
       _refreshFromRepository();
-      if (_repository.state.phase.isConnected) {
-        await synchronizeSettings(force: true);
-        _setLiveMessage('Wearable connected and settings synchronized.');
+      if (state.session.selectedDevice == null && discoverIfNeeded) {
+        List<WearableDevice> devices = const [];
+        try {
+          devices = await _repository.discover();
+        } on Object {
+          // Android hotspots may block mDNS; retain the local hostname fallback.
+        }
+        if (!active()) return;
+        if (devices.length > 1) {
+          _refreshFromRepository();
+          _recordValidationFailure(
+            'More than one wearable was found. Select your Pi before connecting.',
+          );
+          return;
+        }
+        _repository.selectDevice(
+          devices.isEmpty
+              ? const WearableDevice(
+                  id: 'manual:default',
+                  name: WearableDefaults.host,
+                  host: WearableDefaults.host,
+                  port: WearableDefaults.port,
+                  source: WearableDeviceSource.manual,
+                )
+              : devices.single,
+        );
+        _refreshFromRepository();
       }
+      if (state.session.selectedDevice == null) {
+        _recordValidationFailure(
+          'Select a wearable or enter its local address first.',
+        );
+        return;
+      }
+      if (!state.session.phase.isConnected) {
+        if (state.session.phase == WearableConnectionPhase.deviceFound) {
+          await _repository.enroll();
+          if (!active()) return;
+        }
+        await _repository.connect();
+        if (!active()) return;
+        _refreshFromRepository();
+      }
+      if (!state.session.phase.isConnected) return;
+      await synchronizeSettings(force: true);
+      if (!active()) return;
+      if (state.settingsSyncState != WearableSettingsSyncState.synchronized) {
+        // Do not start with old Pi settings or replace the actionable error
+        // with a successful connection message.
+        return;
+      }
+      if (startDetection) {
+        if (state.session.canStart) {
+          await _repository.startAssistance();
+        } else if (state.session.phase == WearableConnectionPhase.paused) {
+          await _repository.resumeAssistance();
+        }
+        if (!active()) return;
+        _refreshFromRepository();
+      }
+      _setLiveMessage(
+        startDetection
+            ? 'Wearable connected. Detection alerts play on this phone when Audio Alerts are on.'
+            : 'Wearable connected.',
+      );
     } on Object catch (error) {
+      if (!active()) return;
+      _refreshFromRepository();
+      final failure = state.session.failure;
       _recordActionFailure(
-        WearableFailureKind.network,
-        'connection_failed',
-        'The wearable could not be reached on the local network.',
+        failure?.kind ?? WearableFailureKind.network,
+        failure?.code ?? 'connection_failed',
+        failure?.userMessage ??
+            'The wearable could not be reached on the local network.',
         error,
       );
     } finally {
-      _endAction();
+      if (active()) _endAction();
     }
   }
 
-  /// Enrolls the first phone when needed, authenticates, and starts detection.
-  ///
-  /// Enrollment is code-free and exclusive to an unclaimed Pi on a trusted
-  /// private LAN. Later sessions reuse the Android Keystore credential.
-  Future<void> connectAndStartAssistance() async {
-    if (state.session.phase == WearableConnectionPhase.deviceFound) {
-      await enroll();
-      if (state.session.phase != WearableConnectionPhase.paired) return;
-    }
-    await connect();
-    if (!state.session.phase.isConnected || !state.session.canStart) return;
-    await startAssistance();
-  }
-
-  /// Uses the owner-configured default endpoint when no device is selected.
-  Future<void> connectDefaultAndStartAssistance() async {
-    if (state.session.selectedDevice == null) {
-      final error = selectManualDevice(
-        host: WearableDefaults.host,
-        port: WearableDefaults.port.toString(),
-      );
-      if (error != null) {
-        _recordValidationFailure(error);
-        return;
-      }
-    }
-    await connectAndStartAssistance();
-  }
-
+  /// Cancels discovery and connection attempts as well as an open connection.
   Future<void> disconnect() async {
-    if (!_beginAction('Disconnecting from the wearable')) return;
+    if (_disposed || _disconnectInProgress) return;
+    _disconnectInProgress = true;
+    ++_intentGeneration;
     _connectionDesired = false;
+    state = state.copyWith(
+      actionInProgress: true,
+      liveMessage: 'Disconnecting from the wearable',
+    );
     try {
+      await _stopPhoneFeedback();
       await _repository.disconnect();
       _refreshFromRepository();
       _setLiveMessage(
-        'Phone disconnected. Active assistance on the wearable was not stopped.',
+        'Phone disconnected. Active wearable assistance continues locally.',
       );
     } on Object catch (error) {
       _recordActionFailure(
@@ -286,6 +356,7 @@ class WearableController extends Notifier<WearableControllerState> {
         error,
       );
     } finally {
+      _disconnectInProgress = false;
       _endAction();
     }
   }
@@ -296,10 +367,42 @@ class WearableController extends Notifier<WearableControllerState> {
     operation: _repository.startAssistance,
   );
 
+  /// An explicit local audio check, available before the Pi is connected.
+  Future<void> testPhoneAudio() async {
+    if (_phoneAnnouncementInProgress || !_beginAction('Testing phone audio')) {
+      return;
+    }
+    final generation = _intentGeneration;
+    final feedbackGeneration = ++_phoneFeedbackGeneration;
+    _phoneAnnouncementInProgress = true;
+    try {
+      await ref.read(wearablePhoneFeedbackServiceProvider).testAudio();
+      if (!_actionIsActive(generation)) return;
+      state = state.copyWith(
+        liveMessage:
+            'Audio test finished. If you did not hear it, check phone media volume and text-to-speech settings.',
+        clearPhoneFeedbackWarning: true,
+      );
+    } on Object {
+      if (!_actionIsActive(generation)) return;
+      state = state.copyWith(
+        phoneFeedbackWarning:
+            'The phone audio test failed. Check phone media volume and text-to-speech settings, then try again.',
+        liveMessage: 'Phone audio test failed',
+      );
+    } finally {
+      if (feedbackGeneration == _phoneFeedbackGeneration) {
+        _phoneAnnouncementInProgress = false;
+      }
+      if (_actionIsActive(generation)) _endAction();
+    }
+  }
+
   Future<void> pauseAssistance() => _runDeviceCommand(
     liveMessage: 'Pausing wearable assistance',
     successMessage: 'Wearable assistance paused',
     operation: _repository.pauseAssistance,
+    stopPhoneFeedback: true,
   );
 
   Future<void> resumeAssistance() => _runDeviceCommand(
@@ -312,6 +415,7 @@ class WearableController extends Notifier<WearableControllerState> {
     liveMessage: 'Stopping wearable assistance',
     successMessage: 'Wearable assistance stopped',
     operation: _repository.stopAssistance,
+    stopPhoneFeedback: true,
   );
 
   Future<void> changeMode(String mode) async {
@@ -331,6 +435,7 @@ class WearableController extends Notifier<WearableControllerState> {
     if (_settingsSyncInProgress || !state.session.phase.isConnected) return;
     if (!force && state.actionInProgress) return;
 
+    final generation = _intentGeneration;
     _settingsSyncInProgress = true;
     state = state.copyWith(
       settingsSyncState: WearableSettingsSyncState.synchronizing,
@@ -360,6 +465,7 @@ class WearableController extends Notifier<WearableControllerState> {
             state.session.deviceStatus?.assistanceMode ?? 'object_detection',
       );
       await _repository.updateSettings(snapshot);
+      if (!_actionIsActive(generation)) return;
       _refreshFromRepository();
       state = state.copyWith(
         settingsSyncState: WearableSettingsSyncState.synchronized,
@@ -367,6 +473,7 @@ class WearableController extends Notifier<WearableControllerState> {
         clearLocalFailure: true,
       );
     } on Object catch (error) {
+      if (!_actionIsActive(generation)) return;
       _recordActionFailure(
         WearableFailureKind.device,
         'settings_sync_failed',
@@ -390,11 +497,7 @@ class WearableController extends Notifier<WearableControllerState> {
       );
       return;
     }
-    if (state.session.selectedDevice == null) {
-      await discover();
-    } else {
-      await connect();
-    }
+    await _connectFlow(startDetection: true, discoverIfNeeded: true);
   }
 
   Future<void> forgetDevice() async {
@@ -430,13 +533,18 @@ class WearableController extends Notifier<WearableControllerState> {
       case AppLifecycleState.detached:
         if (!_foreground) return;
         _foreground = false;
+        ++_intentGeneration;
         final shouldDisconnect =
-            state.session.phase.isConnected || state.session.phase.isBusy;
+            state.actionInProgress ||
+            state.session.phase.isConnected ||
+            state.session.phase.isBusy;
         state = state.copyWith(
           lifecycleSuspended: true,
+          actionInProgress: false,
           liveMessage:
               'App in background. Phone connection paused; wearable assistance continues locally.',
         );
+        await _stopPhoneFeedback();
         if (shouldDisconnect) {
           try {
             await _repository.disconnect();
@@ -586,6 +694,7 @@ class WearableController extends Notifier<WearableControllerState> {
     required String liveMessage,
     required String successMessage,
     required Future<void> Function() operation,
+    bool stopPhoneFeedback = false,
   }) async {
     if (!state.session.phase.isConnected) {
       _recordValidationFailure(
@@ -594,12 +703,17 @@ class WearableController extends Notifier<WearableControllerState> {
       return;
     }
     if (!_beginAction(liveMessage)) return;
+    final generation = _intentGeneration;
     _connectionDesired = true;
     try {
+      if (stopPhoneFeedback) await _stopPhoneFeedback();
+      if (!_actionIsActive(generation)) return;
       await operation();
+      if (!_actionIsActive(generation)) return;
       _refreshFromRepository();
       _setLiveMessage(successMessage);
     } on Object catch (error) {
+      if (!_actionIsActive(generation)) return;
       _recordActionFailure(
         WearableFailureKind.device,
         'command_failed',
@@ -607,7 +721,7 @@ class WearableController extends Notifier<WearableControllerState> {
         error,
       );
     } finally {
-      _endAction();
+      if (_actionIsActive(generation)) _endAction();
     }
   }
 
@@ -633,7 +747,13 @@ class WearableController extends Notifier<WearableControllerState> {
   }
 
   bool _beginAction(String liveMessage) {
-    if (state.actionInProgress || state.session.phase.isBusy) return false;
+    if (_disposed ||
+        !_foreground ||
+        state.actionInProgress ||
+        state.session.phase.isBusy) {
+      return false;
+    }
+    ++_intentGeneration;
     state = state.copyWith(
       actionInProgress: true,
       liveMessage: liveMessage,
@@ -641,6 +761,9 @@ class WearableController extends Notifier<WearableControllerState> {
     );
     return true;
   }
+
+  bool _actionIsActive(int generation) =>
+      !_disposed && _foreground && generation == _intentGeneration;
 
   void _endAction() {
     if (_disposed) return;
@@ -658,6 +781,10 @@ class WearableController extends Notifier<WearableControllerState> {
           : state.liveMessage,
       clearLocalFailure: next.failure == null,
     );
+    if (previous.phase == WearableConnectionPhase.running &&
+        next.phase != WearableConnectionPhase.running) {
+      unawaited(_stopPhoneFeedback());
+    }
 
     if (next.phase.isConnected) {
       _connectionDesired = true;
@@ -695,19 +822,31 @@ class WearableController extends Notifier<WearableControllerState> {
   Future<void> _announceDetectionOnPhone(
     WearableDetectionEvent detection,
   ) async {
-    if (_disposed || _phoneAnnouncementInProgress) return;
+    if (_disposed ||
+        !_foreground ||
+        state.session.phase != WearableConnectionPhase.running ||
+        detection.sourceDeviceId != state.session.selectedDevice?.id ||
+        _phoneAnnouncementInProgress) {
+      return;
+    }
     final settings = ref.read(appSettingsControllerProvider);
     if (!settings.feedbackSettings.audioEnabled) return;
 
     _phoneAnnouncementInProgress = true;
+    final generation = _intentGeneration;
+    final feedbackGeneration = ++_phoneFeedbackGeneration;
     try {
       await ref.read(wearablePhoneFeedbackServiceProvider).announce(detection);
-      if (!_disposed) {
+      if (_actionIsActive(generation) &&
+          feedbackGeneration == _phoneFeedbackGeneration &&
+          state.session.phase.isConnected) {
         state = state.copyWith(clearPhoneFeedbackWarning: true);
       }
     } on Object catch (error) {
       debugPrint('Wearable phone feedback failed: ${error.runtimeType}');
-      if (!_disposed) {
+      if (_actionIsActive(generation) &&
+          feedbackGeneration == _phoneFeedbackGeneration &&
+          state.session.phase.isConnected) {
         state = state.copyWith(
           phoneFeedbackWarning:
               'A detection arrived, but the phone could not announce it. '
@@ -715,7 +854,26 @@ class WearableController extends Notifier<WearableControllerState> {
         );
       }
     } finally {
+      if (feedbackGeneration == _phoneFeedbackGeneration) {
+        _phoneAnnouncementInProgress = false;
+      }
+    }
+  }
+
+  Future<void> _stopPhoneFeedback() async {
+    if (!_phoneAnnouncementInProgress || _phoneFeedbackStopping) return;
+    _phoneFeedbackStopping = true;
+    ++_phoneFeedbackGeneration;
+    try {
+      await ref
+          .read(wearablePhoneFeedbackServiceProvider)
+          .stop()
+          .timeout(const Duration(seconds: 2));
+    } on Object {
+      // Network cleanup and Pi fallback must proceed if platform stop fails.
+    } finally {
       _phoneAnnouncementInProgress = false;
+      _phoneFeedbackStopping = false;
     }
   }
 

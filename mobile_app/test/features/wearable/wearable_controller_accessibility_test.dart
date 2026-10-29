@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:ai_blind_assistant/app/wearable_controller.dart';
+import 'package:ai_blind_assistant/app/wearable_phone_feedback_service.dart';
 import 'package:ai_blind_assistant/app/wearable_providers.dart';
 import 'package:ai_blind_assistant/core/constants/wearable_defaults.dart';
+import 'package:ai_blind_assistant/core/constants/app_keys.dart';
 import 'package:ai_blind_assistant/domain/entities/wearable_device.dart';
 import 'package:ai_blind_assistant/domain/entities/wearable_repository_event.dart';
 import 'package:ai_blind_assistant/domain/entities/wearable_session_state.dart';
@@ -20,6 +22,159 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('phone feedback speaks the Pi object name and direction', () async {
+    String? spoken;
+    final feedback = VoiceKernelWearablePhoneFeedbackService(
+      speak: (text) async => spoken = text,
+      stopSpeaking: () async {},
+    );
+
+    await feedback.announce(_phoneDetection);
+
+    expect(spoken, 'Car very close ahead');
+  });
+
+  testWidgets('audio test works before Pi connection without enrolling', (
+    tester,
+  ) async {
+    final repository = _FakeWearableRepository(
+      WearableSessionState.notConfigured,
+    );
+    final feedback = _RecordingWearablePhoneFeedback();
+    final container = ProviderContainer(
+      overrides: [
+        wearableRepositoryProvider.overrideWithValue(repository),
+        wearablePhoneFeedbackServiceProvider.overrideWithValue(feedback),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await repository.dispose();
+    });
+    final controller = container.read(wearableControllerProvider.notifier);
+    await tester.pump();
+
+    await controller.testPhoneAudio();
+
+    expect(feedback.tests, 1);
+    expect(repository.connectCalls, 0);
+    expect(repository.enrollCalls, 0);
+    expect(
+      container.read(wearableControllerProvider).liveMessage,
+      contains('If you did not hear it'),
+    );
+  });
+
+  for (final action in ['disconnect', 'background', 'pause', 'stop']) {
+    testWidgets(
+      'active phone speech stops on $action and ignores late failure',
+      (tester) async {
+        final repository = _FakeWearableRepository(
+          const WearableSessionState(
+            phase: WearableConnectionPhase.running,
+            selectedDevice: _device,
+          ),
+        );
+        final gate = Completer<void>();
+        final feedback = _RecordingWearablePhoneFeedback()..pending = gate;
+        final container = ProviderContainer(
+          overrides: [
+            wearableRepositoryProvider.overrideWithValue(repository),
+            wearablePhoneFeedbackServiceProvider.overrideWithValue(feedback),
+          ],
+        );
+        addTearDown(() async {
+          container.dispose();
+          await repository.dispose();
+        });
+        final controller = container.read(wearableControllerProvider.notifier);
+        await tester.pump();
+        repository.emitEvent(
+          WearableDetectionReceived(_phoneDetection, isHazard: true),
+        );
+        await tester.pump();
+        expect(feedback.detections, hasLength(1));
+
+        switch (action) {
+          case 'background':
+            await controller.handleLifecycleChange(AppLifecycleState.paused);
+          case 'pause':
+            await controller.pauseAssistance();
+          case 'stop':
+            await controller.stopAssistance();
+          default:
+            await controller.disconnect();
+        }
+        expect(feedback.stops, 1);
+        gate.completeError(StateError('late platform failure'));
+        await tester.pump();
+        expect(
+          container.read(wearableControllerProvider).phoneFeedbackWarning,
+          isNull,
+        );
+        repository.emitEvent(
+          WearableDetectionReceived(_phoneDetection, isHazard: true),
+        );
+        await tester.pump();
+        expect(feedback.detections, hasLength(1));
+      },
+    );
+  }
+
+  testWidgets('failed audio test reports a useful warning', (tester) async {
+    final repository = _FakeWearableRepository(
+      WearableSessionState.notConfigured,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        wearableRepositoryProvider.overrideWithValue(repository),
+        wearablePhoneFeedbackServiceProvider.overrideWithValue(
+          _FailingWearablePhoneFeedback(),
+        ),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await repository.dispose();
+    });
+    final controller = container.read(wearableControllerProvider.notifier);
+    await tester.pump();
+    await controller.testPhoneAudio();
+    expect(
+      container.read(wearableControllerProvider).phoneFeedbackWarning,
+      contains('audio test failed'),
+    );
+    expect(
+      container.read(wearableControllerProvider).actionInProgress,
+      isFalse,
+    );
+  });
+
+  testWidgets('Disconnect remains available while detection starts', (
+    tester,
+  ) async {
+    final repository = _FakeWearableRepository(
+      const WearableSessionState(
+        phase: WearableConnectionPhase.starting,
+        selectedDevice: _device,
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [wearableRepositoryProvider.overrideWithValue(repository)],
+        child: const MaterialApp(home: RaspberryPiScreen()),
+      ),
+    );
+    await tester.pump();
+    final disconnect = find.byKey(AppKeys.raspberryPiDisconnectButton);
+    await tester.ensureVisible(disconnect);
+    await tester.tap(disconnect);
+    await tester.pump();
+    expect(repository.disconnectCalls, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await repository.dispose();
+  });
 
   testWidgets('lifecycle disconnects only transport and reconnects once', (
     tester,
@@ -67,12 +222,14 @@ void main() {
     final repository = _FakeWearableRepository(
       WearableSessionState.notConfigured,
     );
+    final feedback = _RecordingWearablePhoneFeedback();
     try {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             wearableRepositoryProvider.overrideWithValue(repository),
             wearableClientIdProvider.overrideWith((ref) async => 'test-client'),
+            wearablePhoneFeedbackServiceProvider.overrideWithValue(feedback),
           ],
           child: const MaterialApp(home: RaspberryPiScreen()),
         ),
@@ -85,20 +242,119 @@ void main() {
         ),
         findsOneWidget,
       );
+      expect(find.text('Connection options'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(
+          'Validate and select this local Raspberry Pi address',
+        ),
+        findsNothing,
+      );
+      await tester.ensureVisible(find.text('Connection options'));
+      await tester.tap(find.text('Connection options'));
+      await tester.pumpAndSettle();
       expect(
         find.bySemanticsLabel(
           'Validate and select this local Raspberry Pi address',
         ),
         findsOneWidget,
       );
-      // The default hostname appears in the pre-filled host text field and
-      // also in the connection guidance card below it.
       expect(find.text(WearableDefaults.host), findsWidgets);
+      expect(find.text('Phone hotspot setup'), findsOneWidget);
+      expect(find.text('Alerts play on this phone'), findsOneWidget);
+      final audioTest = find.bySemanticsLabel(
+        'Play a test message through the phone speaker',
+      );
+      expect(audioTest, findsOneWidget);
+      await tester.ensureVisible(audioTest);
+      await tester.tap(audioTest);
+      await tester.pumpAndSettle();
+      expect(feedback.tests, 1);
       expect(tester.takeException(), isNull);
     } finally {
       semantics.dispose();
       await repository.dispose();
     }
+  });
+
+  for (final background in [false, true]) {
+    testWidgets(
+      background
+          ? 'background cancels the whole discovery and connection flow'
+          : 'cancel stops the whole flow and concurrent Connect is ignored',
+      (tester) async {
+        final gate = Completer<List<WearableDevice>>();
+        final repository = _FakeWearableRepository(
+          WearableSessionState.notConfigured,
+        )..discoveryGate = gate;
+        final container = ProviderContainer(
+          overrides: [
+            wearableRepositoryProvider.overrideWithValue(repository),
+            wearableClientIdProvider.overrideWith((ref) async => 'test-client'),
+          ],
+        );
+        addTearDown(() async {
+          container.dispose();
+          await repository.dispose();
+        });
+        final controller = container.read(wearableControllerProvider.notifier);
+        await tester.pump();
+        final first = controller.connectDefaultAndStartAssistance();
+        await tester.pump();
+        await controller.connectDefaultAndStartAssistance();
+        expect(repository.discoverCalls, 1);
+        expect(
+          container.read(wearableControllerProvider).actionInProgress,
+          isTrue,
+        );
+        if (background) {
+          await controller.handleLifecycleChange(AppLifecycleState.paused);
+        } else {
+          await controller.disconnect();
+        }
+        gate.complete([_device]);
+        await first;
+        expect(repository.disconnectCalls, 1);
+        expect(repository.enrollCalls, 0);
+        expect(repository.connectCalls, 0);
+        expect(repository.startCalls, 0);
+        expect(
+          container.read(wearableControllerProvider).actionInProgress,
+          isFalse,
+        );
+        expect(container.read(wearableControllerProvider).failure, isNull);
+      },
+    );
+  }
+
+  testWidgets('late phone alerts are ignored after disconnect or background', (
+    tester,
+  ) async {
+    final repository = _FakeWearableRepository(
+      const WearableSessionState(
+        phase: WearableConnectionPhase.running,
+        selectedDevice: _device,
+      ),
+    );
+    final feedback = _RecordingWearablePhoneFeedback();
+    final container = ProviderContainer(
+      overrides: [
+        wearableRepositoryProvider.overrideWithValue(repository),
+        wearablePhoneFeedbackServiceProvider.overrideWithValue(feedback),
+        wearableClientIdProvider.overrideWith((ref) async => 'test-client'),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await repository.dispose();
+    });
+    final controller = container.read(wearableControllerProvider.notifier);
+    await tester.pump();
+    await controller.handleLifecycleChange(AppLifecycleState.paused);
+    repository.emitEvent(
+      WearableDetectionReceived(_phoneDetection, isHazard: true),
+    );
+    await tester.pump();
+    expect(feedback.detections, isEmpty);
   });
 
   testWidgets('one action enrolls, connects, and starts an unclaimed Pi', (
@@ -159,6 +415,102 @@ void main() {
     expect(repository.enrollCalls, 1);
     expect(repository.connectCalls, 1);
     expect(repository.startCalls, 1);
+  });
+
+  testWidgets('fresh install Connect action uses the discovered Pi address', (
+    tester,
+  ) async {
+    final repository = _FakeWearableRepository(
+      WearableSessionState.notConfigured,
+      discovered: const [_device],
+    );
+    final container = ProviderContainer(
+      overrides: [
+        wearableRepositoryProvider.overrideWithValue(repository),
+        wearableClientIdProvider.overrideWith((ref) async => 'test-client'),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await repository.dispose();
+    });
+    final controller = container.read(wearableControllerProvider.notifier);
+    container.read(wearableControllerProvider);
+    await tester.pump();
+
+    await controller.connectDefaultAndStartAssistance();
+
+    expect(repository.selectedDevices.single.host, _device.host);
+    expect(repository.enrollCalls, 1);
+    expect(repository.connectCalls, 1);
+    expect(repository.startCalls, 1);
+  });
+
+  testWidgets('fresh install does not auto-enroll among multiple wearables', (
+    tester,
+  ) async {
+    final repository = _FakeWearableRepository(
+      WearableSessionState.notConfigured,
+      discovered: const [
+        _device,
+        WearableDevice(
+          id: 'pi-other',
+          name: 'Other wearable',
+          host: '192.168.1.5',
+          port: 8765,
+          source: WearableDeviceSource.discovered,
+        ),
+      ],
+    );
+    final container = ProviderContainer(
+      overrides: [
+        wearableRepositoryProvider.overrideWithValue(repository),
+        wearableClientIdProvider.overrideWith((ref) async => 'test-client'),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await repository.dispose();
+    });
+    final controller = container.read(wearableControllerProvider.notifier);
+    container.read(wearableControllerProvider);
+    await tester.pump();
+
+    await controller.connectDefaultAndStartAssistance();
+
+    expect(repository.selectedDevices, isEmpty);
+    expect(repository.enrollCalls, 0);
+    expect(repository.connectCalls, 0);
+  });
+
+  testWidgets('failed settings sync does not start or claim success', (
+    tester,
+  ) async {
+    final repository = _FakeWearableRepository(
+      WearableSessionState.notConfigured,
+      discovered: const [_device],
+    )..settingsError = StateError('Pi settings storage unavailable');
+    final container = ProviderContainer(
+      overrides: [
+        wearableRepositoryProvider.overrideWithValue(repository),
+        wearableClientIdProvider.overrideWith((ref) async => 'test-client'),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await repository.dispose();
+    });
+    final controller = container.read(wearableControllerProvider.notifier);
+    await tester.pump();
+
+    await controller.connectDefaultAndStartAssistance();
+
+    final view = container.read(wearableControllerProvider);
+    expect(repository.startCalls, 0);
+    expect(view.settingsSyncState, WearableSettingsSyncState.failed);
+    expect(view.failure?.code, 'settings_sync_failed');
+    expect(view.liveMessage, contains('not synchronized'));
+    expect(view.actionInProgress, isFalse);
   });
 
   testWidgets('first connection needs one button and no pairing-code field', (
@@ -229,6 +581,83 @@ void main() {
 
     expect(feedback.detections, [_phoneDetection]);
   });
+
+  testWidgets('ordinary and Pi-target events do not trigger phone speech', (
+    tester,
+  ) async {
+    final repository = _FakeWearableRepository(
+      const WearableSessionState(
+        phase: WearableConnectionPhase.running,
+        selectedDevice: _device,
+      ),
+    );
+    final feedback = _RecordingWearablePhoneFeedback();
+    final container = ProviderContainer(
+      overrides: [
+        wearableRepositoryProvider.overrideWithValue(repository),
+        wearableClientIdProvider.overrideWith((ref) async => 'test-client'),
+        wearablePhoneFeedbackServiceProvider.overrideWithValue(feedback),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await repository.dispose();
+    });
+    container.read(wearableControllerProvider);
+    await tester.pump();
+
+    repository.emitEvent(
+      WearableDetectionReceived(_phoneDetection, isHazard: false),
+    );
+    repository.emitEvent(
+      WearableDetectionReceived(
+        WearableDetectionEvent.fromPayload({
+          ..._phoneDetection.toPayload(),
+          'feedbackTarget': 'pi',
+        }),
+        isHazard: true,
+      ),
+    );
+    await tester.pump();
+
+    expect(feedback.detections, isEmpty);
+  });
+
+  testWidgets('failed phone speech shows an accessible warning', (
+    tester,
+  ) async {
+    final repository = _FakeWearableRepository(
+      const WearableSessionState(
+        phase: WearableConnectionPhase.running,
+        selectedDevice: _device,
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        wearableRepositoryProvider.overrideWithValue(repository),
+        wearableClientIdProvider.overrideWith((ref) async => 'test-client'),
+        wearablePhoneFeedbackServiceProvider.overrideWithValue(
+          _FailingWearablePhoneFeedback(),
+        ),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await repository.dispose();
+    });
+    container.read(wearableControllerProvider);
+    await tester.pump();
+
+    repository.emitEvent(
+      WearableDetectionReceived(_phoneDetection, isHazard: true),
+    );
+    await tester.pump();
+
+    expect(
+      container.read(wearableControllerProvider).phoneFeedbackWarning,
+      contains('phone could not announce'),
+    );
+  });
 }
 
 const _device = WearableDevice(
@@ -255,17 +684,45 @@ final _phoneDetection = WearableDetectionEvent(
 
 class _RecordingWearablePhoneFeedback implements WearablePhoneFeedbackService {
   final List<WearableDetectionEvent> detections = [];
+  int tests = 0;
+  int stops = 0;
+  Completer<void>? pending;
 
   @override
   Future<void> announce(WearableDetectionEvent detection) async {
     detections.add(detection);
+    await pending?.future;
+  }
+
+  @override
+  Future<void> testAudio() async {
+    tests++;
+  }
+
+  @override
+  Future<void> stop() async {
+    stops++;
   }
 }
 
+class _FailingWearablePhoneFeedback implements WearablePhoneFeedbackService {
+  @override
+  Future<void> announce(WearableDetectionEvent detection) async {
+    throw StateError('TTS unavailable');
+  }
+
+  @override
+  Future<void> testAudio() async => throw StateError('TTS unavailable');
+
+  @override
+  Future<void> stop() async {}
+}
+
 class _FakeWearableRepository implements WearableRepository {
-  _FakeWearableRepository(this._state);
+  _FakeWearableRepository(this._state, {this.discovered = const []});
 
   WearableSessionState _state;
+  final List<WearableDevice> discovered;
   final _states = StreamController<WearableSessionState>.broadcast();
   final _events = StreamController<WearableRepositoryEvent>.broadcast();
   int connectCalls = 0;
@@ -274,6 +731,9 @@ class _FakeWearableRepository implements WearableRepository {
   int stopCalls = 0;
   int startCalls = 0;
   int settingsWrites = 0;
+  Object? settingsError;
+  int discoverCalls = 0;
+  Completer<List<WearableDevice>>? discoveryGate;
   final List<WearableDevice> selectedDevices = [];
 
   @override
@@ -312,7 +772,10 @@ class _FakeWearableRepository implements WearableRepository {
   }
 
   @override
-  Future<List<WearableDevice>> discover() async => const [];
+  Future<List<WearableDevice>> discover() async {
+    discoverCalls++;
+    return discoveryGate == null ? discovered : discoveryGate!.future;
+  }
 
   @override
   Future<void> dispose() async {
@@ -355,7 +818,9 @@ class _FakeWearableRepository implements WearableRepository {
   }
 
   @override
-  Future<void> pauseAssistance() async {}
+  Future<void> pauseAssistance() async {
+    _set(_state.copyWith(phase: WearableConnectionPhase.paused));
+  }
 
   @override
   Future<void> resumeAssistance() async {}
@@ -363,6 +828,7 @@ class _FakeWearableRepository implements WearableRepository {
   @override
   Future<void> stopAssistance() async {
     stopCalls++;
+    _set(_state.copyWith(phase: WearableConnectionPhase.connected));
   }
 
   @override
@@ -371,6 +837,7 @@ class _FakeWearableRepository implements WearableRepository {
   @override
   Future<void> updateSettings(WearableSettingsSnapshot settings) async {
     settingsWrites++;
+    if (settingsError case final error?) throw error;
     _set(_state.copyWith(currentSettings: settings));
   }
 

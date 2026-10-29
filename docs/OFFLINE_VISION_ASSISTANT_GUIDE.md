@@ -1,6 +1,38 @@
 # Offline Vision AI Assistant Guide
 
-Last reviewed: 2026-08-20
+## Demo listening reliability — 1.4.18
+
+Keep the app visible and say “Hey Vision AI”, “Hi Vision AI” or “Listen Vision AI”.
+Wait until “Listening” finishes and the short ready tone/vibration occurs, then
+say one short English command. After ordinary spoken results, the same cue marks
+command readiness. Cue output depends on media volume/hardware; it is not emitted
+while the document reader speaks or in Smart AI button mode. Vision AI pauses
+ordinary commands during feedback and does not provide general interruption.
+
+The local microphone automatically attempts recovery twice. If it cannot recover,
+open Assistant Settings and use Restart voice listening, or use the existing
+screen buttons. No saved preference, key or Pi pairing is changed. Unknown-word
+markers/negated requests ask for repetition instead of being guessed as actions.
+[Verification and short demo rehearsal](VISION_AI_RELIABILITY_2026-10-21.md).
+
+Last reviewed: 2026-10-15
+
+## Spoken results and screen commands — 1.4.16
+
+Wake Vision AI with Hey Vision AI, Hi Vision AI, or Listen Vision AI, then speak
+a command. Go back, can you please go back, go home, open setting, open settings
+and open about page navigate screens. On Smart AI, say these directly without
+holding the circle when not recording, including while an answer is paused.
+Hold the circle only to record a Smart AI question. Named controls remain available.
+
+Connect to Raspberry Pi announces finding when discovery is needed, connecting,
+and the actual outcome. Not found includes hotspot/power guidance; multiple Pis
+require selection. A connection does not start detection: say start wearable next.
+Start Mobile Mode announces camera preparation and confirms only when active;
+permission/startup failures give a reason. Bare pause/resume/stop target the visible
+Mobile Mode, wearable or reader; previous line is document movement and go back
+exits a screen. Unavailable screen-specific controls do not target another feature.
+[Verification and physical limits](VISION_AI_COMMANDS_2026-10-21.md).
 
 ## Purpose and Boundary
 
@@ -29,10 +61,19 @@ owner-paired private-LAN backend. Camera frames never enter either voice path.
 5. Keep giving offline commands without repeating the wake phrase. Commands
    execute through deterministic Riverpod controllers and the assistant speaks
    each observed result.
-6. Say “goodbye”, “bye”, or “stop listening” to end the offline command session.
+6. Say the complete phrase “goodbye” or “stop listening” to end the offline
+   command session. Bare “bye”, “by” and “buy” are not exit commands.
 7. In Smart AI, ask follow-up questions without repeating the wake phrase. Say
-   “bye” (including the common ASR spelling “by”) to leave Smart AI and return
-   to the active offline command session.
+   “exit Smart AI” or “close Smart AI” to return to the active offline command
+   session. Opening Smart AI automatically checks the saved paired laptop;
+   first-time pairing remains explicit. Entry and Retry do not send a draft.
+8. In Scanner, “scan again” or “restart scanner” returns to camera framing.
+   Point at the next document, then say “scan document” or tap Scan when ready.
+   It waits without a countdown. “Restart reading” returns to the first reading unit.
+9. With hands-free enabled, reader playback opens contextual commands directly.
+   Multiword reader controls can interrupt ongoing speech; goodbye still ends
+   that session. Printed-command collisions are rejected conservatively: use
+   the wake phrase, wait for silence/acknowledgement, then command, or use touch.
 
 ## Audio and Recognition Pipeline
 
@@ -47,16 +88,24 @@ Android VOICE_RECOGNITION AudioRecord, 16 kHz mono
   -> in-memory transcript
   -> deterministic local intent resolver first
   -> real local controller action, or Smart AI text backend on /assistant only
-  -> pause microphone during TTS
+  -> pause microphone during assistant feedback; keep guarded reader controls during document TTS
   -> restore contextual command/conversation state until explicit goodbye
 ```
 
 The wake decoder includes `[unk]` so unrelated sound is not forced into an app
-command. Partial Vosk hypotheses never activate the assistant. A standalone
+command. Partial Vosk hypotheses never activate the wake listener. During
+foreground reader playback only, stable multiword proposals can execute a
+strong registered reader control after text-echo/context/session checks and
+an atomic native claim. They cannot execute navigation, capture or backend tools.
+A standalone
 “Vision”, “Vision AI”, generic speech, and arbitrary leading words are rejected.
 Decoder timeouts do not end an activated offline session; its contextual grammar
 keeps listening until explicit goodbye. Smart AI conversation stays active only
 while its screen is visible and the app remains foregrounded.
+
+Module 67 evidence: [reader voice verification](READER_VOICE_VERIFICATION_2026-10-15.md),
+459 Flutter tests, 13 native app tests, clean analysis and both APK builds.
+Device acoustic overlap/AEC remains a physical acceptance check.
 
 ## Crash-Safety and Microphone Ownership
 
@@ -111,7 +160,8 @@ Still open pending owner-spoken physical acceptance on the connected phone:
 
 - intended-accent accuracy and quiet/noisy false-wake rate;
 - TV/music/fan and phone-speaker echo behavior;
-- one-wake/multiple-command/scanner/Smart AI/“bye”/“goodbye” cycles;
+- one-wake/multiple-command/scanner/Smart AI/explicit-exit cycles, including
+  rejection of buy/by/bye and incidental conversation;
 - reproduction and logcat/tombstone verification of the reported app close;
 - TalkBack, permission revocation, audio focus, battery, memory, and thermal
   acceptance.

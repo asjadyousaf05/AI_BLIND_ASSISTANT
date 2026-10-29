@@ -3,6 +3,7 @@ import '../enums/voice_feature_context.dart';
 import '../enums/voice_intent.dart';
 import 'asr_correction_lexicon.dart';
 import 'semantic_lexicon.dart';
+import 'voice_action_registry.dart';
 
 /// The 14-stage offline intent resolution pipeline.
 ///
@@ -50,6 +51,21 @@ class IntelligentIntentResolver {
       return VoiceCommand(
         intent: Greeting(),
         matchScore: 1.0,
+        matchType: VoiceMatchType.exact,
+        originalTranscript: rawTranscript,
+        normalizedTranscript: text,
+      );
+    }
+
+    // Missing words and negation must never become a positive app action via
+    // semantic/fuzzy matching (for example "do not stop detection"). Ask for
+    // another command rather than guessing what the recognizer omitted.
+    if (RegExp(
+      r'\[unk\]|\bunk\b|\b(?:not|never|dont|don.t)\b',
+    ).hasMatch(text)) {
+      return VoiceCommand(
+        intent: UnknownIntent(rawTranscript),
+        matchScore: 0,
         matchType: VoiceMatchType.exact,
         originalTranscript: rawTranscript,
         normalizedTranscript: text,
@@ -120,14 +136,18 @@ class IntelligentIntentResolver {
 
   // ─────────────────── Stage 1: Normalization ───────────────────
 
-  String _normalize(String text) =>
-      text.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
+  String _normalize(String text) => text
+      .toLowerCase()
+      .trim()
+      .replaceAll(RegExp(r'[.!?,;:]+$'), '')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
 
   // ─────────────────── Stage 2: Wake Removal ────────────────────
 
   static final _wakePatterns = [
     RegExp(
-      r'^(hey|hi|hello|ok|okay|yo)\s+vision\s*(ai|a\s*i|aye|eye)?\s*,?\s*',
+      r'^(hey|hi|hello|ok|okay|yo|listen)\s+vision\s*(ai|a\s*i|aye|eye)?\s*,?\s*',
     ),
     RegExp(r'^vision\s*(ai|a\s*i|aye|eye)?\s*,?\s*'),
   ];
@@ -168,7 +188,20 @@ class IntelligentIntentResolver {
     String text, {
     required VoiceFeatureContext context,
   }) {
-    final match = _exactAliases[text];
+    final dismissal =
+        _conversationPatterns[text
+            .replaceFirst(RegExp(r'[.!?,;:]+$'), '')
+            .trim()];
+    if (dismissal is DismissAssistant) {
+      return VoiceCommand(
+        intent: dismissal,
+        matchScore: 1.0,
+        matchType: VoiceMatchType.exact,
+      );
+    }
+    // Short feature verbs belong to the visible feature. Explicit global
+    // navigation (including "go back") is never a reader-line command.
+    final match = _contextualAliases[context]?[text] ?? _exactAliases[text];
     if (match != null) {
       return VoiceCommand(
         intent: match,
@@ -428,6 +461,7 @@ class IntelligentIntentResolver {
     if (textTokens.isEmpty) return null;
 
     for (final entry in _exactAliases.entries) {
+      if (!VoiceActionRegistry.isAllowedIn(entry.value, context)) continue;
       final aliasTokens = entry.key
           .split(' ')
           .where((t) => t.isNotEmpty)
@@ -459,7 +493,13 @@ class IntelligentIntentResolver {
 
   VoiceCommand? _tryConversationMatch(String text) {
     for (final entry in _conversationPatterns.entries) {
-      if (text.contains(entry.key)) {
+      // Ending a session requires a complete explicit request. Substring
+      // matching (especially "by") also matched ordinary conversation.
+      if (entry.value is DismissAssistant) continue;
+      final matches = RegExp(
+        r'(^|\s)' + RegExp.escape(entry.key) + r'($|\s|[.!?,;:])',
+      ).hasMatch(text);
+      if (matches) {
         return VoiceCommand(
           intent: entry.value,
           matchScore: 0.85,
@@ -810,6 +850,11 @@ class IntelligentIntentResolver {
     'capture now': const ScanDocument(),
 
     'scan again': const RescanDocument(),
+    'restart scanner': const RescanDocument(),
+    'restart the scanner': const RescanDocument(),
+    'restart document scanner': const RescanDocument(),
+    'scan document again': const RescanDocument(),
+    'rescan document': const RescanDocument(),
     'scan another': const RescanDocument(),
     'scan another document': const RescanDocument(),
     'scan another page': const RescanDocument(),
@@ -1021,6 +1066,9 @@ class IntelligentIntentResolver {
     'main screen': const NavigateHome(),
 
     'open settings': const NavigateSettings(),
+    'open setting': const NavigateSettings(),
+    'open settings page': const NavigateSettings(),
+    'open setting page': const NavigateSettings(),
     'go to settings': const NavigateSettings(),
     'show settings': const NavigateSettings(),
     'open preferences': const NavigateSettings(),
@@ -1060,6 +1108,9 @@ class IntelligentIntentResolver {
     'change mode': const NavigateModeSelection(),
 
     'open safety': const NavigateSafety(),
+    'open about': const NavigateSafety(),
+    'open about page': const NavigateSafety(),
+    'open about and safety': const NavigateSafety(),
     'about safety': const NavigateSafety(),
     'safety screen': const NavigateSafety(),
 
@@ -1146,8 +1197,16 @@ class IntelligentIntentResolver {
           'stop': const StopMobileDetection(),
           'stop it': const StopMobileDetection(),
           'pause': const PauseMobileDetection(),
+          'pause it': const PauseMobileDetection(),
+          'hold on': const PauseMobileDetection(),
           'resume': const ResumeMobileDetection(),
           'continue': const ResumeMobileDetection(),
+        },
+        VoiceFeatureContext.wearable: {
+          'stop': const StopWearable(),
+          'pause': const PauseWearable(),
+          'resume': const ResumeWearable(),
+          'continue': const ResumeWearable(),
         },
         // In Scanner reading, bare contextual commands map cleanly.
         VoiceFeatureContext.scannerReading: {
@@ -1166,7 +1225,6 @@ class IntelligentIntentResolver {
           'next': const ReadingNext(),
           'previous': const ReadingPrevious(),
           'back': const ReadingPrevious(),
-          'go back': const ReadingPrevious(),
           'repeat': const ReadingRepeat(),
           'again': const ReadingRepeat(),
           'restart': const ReadingRestart(),
@@ -1208,12 +1266,14 @@ class IntelligentIntentResolver {
 
     'goodbye': const DismissAssistant(),
     'good bye': const DismissAssistant(),
-    'bye': const DismissAssistant(),
-    'by': const DismissAssistant(),
-    'dismiss': const DismissAssistant(),
+    'bye vision ai': const DismissAssistant(),
+    'goodbye vision ai': const DismissAssistant(),
+    'good bye vision ai': const DismissAssistant(),
     'stop listening': const DismissAssistant(),
+    'end voice session': const DismissAssistant(),
+    'exit smart ai': const DismissAssistant(),
+    'close smart ai': const DismissAssistant(),
     'go to sleep': const DismissAssistant(),
-    'sleep': const DismissAssistant(),
     "that's all": const DismissAssistant(),
     'that is all': const DismissAssistant(),
     'exit assistant': const DismissAssistant(),

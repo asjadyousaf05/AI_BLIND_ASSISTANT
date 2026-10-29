@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -25,7 +26,27 @@ from ai_blind_pi.models import (
 )
 from ai_blind_pi.persistence import StateStore
 from ai_blind_pi.protocol import ProtocolError
-from ai_blind_pi.service import AssistanceEngine
+from ai_blind_pi.service import AssistanceEngine, _throttle_state
+
+
+@pytest.mark.parametrize(
+    "bits,expected",
+    [
+        (0x0, (False, False)),
+        (0x50000, (False, False)),
+        (0x50005, (True, True)),
+        (0x20002, (True, False)),
+        (0x80008, (True, False)),
+    ],
+)
+def test_live_power_health_distinguishes_current_faults_from_history(monkeypatch, bits, expected):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "ai_blind_pi.service.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=f"throttled={hex(bits)}"),
+    )
+    assert _throttle_state() == expected
 
 
 def test_latest_frame_buffer_discards_stale_frames() -> None:
@@ -93,6 +114,11 @@ async def test_engine_state_settings_and_phone_independence(tmp_path) -> None:
     await asyncio.sleep(0.03)
     assert engine.state == AssistanceState.RUNNING
     assert detector.calls > 0
+    health = engine.performance_metrics()
+    assert health["processedFrames"] > 0
+    assert health["inferenceTimeMs"] >= 0
+    assert health["frameAgeMs"] >= 0
+    assert health["droppedFrames"] >= 0
     await engine.pause()
     assert engine.state == AssistanceState.PAUSED
     await engine.resume()
@@ -228,3 +254,76 @@ async def test_feedback_has_per_class_cooldown_and_phone_ownership() -> None:
     assert announced == other and target == "phone"
     assert phone_speech.messages == []
     await phone_policy.close()
+
+
+class _BlockingSpeech(RecordingSpeech):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.stopped = asyncio.Event()
+
+    async def speak(self, message: str, *, urgent: bool = False) -> None:
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            self.stopped.set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transition", ["phone", "muted", "stop"])
+async def test_in_progress_pi_speech_stops_at_output_handover(transition: str) -> None:
+    speech = _BlockingSpeech()
+    policy = FeedbackPolicy(speech)
+    settings = WearableSettings.defaults("pi-feedback-test")
+    detection = Detection(
+        90, "Car", 0.9, BoundingBox(0.2, 0.1, 0.8, 0.9), "center", 70, "mobility_hazard"
+    )
+    try:
+        await policy.consider([detection], settings, phone_connected=False)
+        assert await policy.consider([detection], settings, phone_connected=False) == (
+            detection,
+            "pi",
+        )
+        await asyncio.wait_for(speech.started.wait(), timeout=1)
+        if transition == "stop":
+            await policy.stop_local_speech()
+        else:
+            await policy.consider(
+                [],
+                replace(settings, speech_enabled=transition != "muted"),
+                phone_connected=transition == "phone",
+            )
+        assert speech.stopped.is_set()
+    finally:
+        await policy.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_settings_write_keeps_previous_live_settings(tmp_path, monkeypatch) -> None:
+    store = StateStore(tmp_path / "state.json")
+    engine = AssistanceEngine(
+        device_id="pi-settings-test",
+        camera=SimulatedCamera(),
+        detector=SimulatedDetector(),
+        feedback=FeedbackPolicy(RecordingSpeech()),
+        store=store,
+    )
+    previous = engine.settings
+    incoming = replace(
+        previous,
+        version=SettingsVersion(1, now_iso(), "phone", "phone-client"),
+        speech_enabled=False,
+    )
+
+    def reject_write(_mutator):
+        raise OSError("simulated storage failure")
+
+    monkeypatch.setattr(store, "update", reject_write)
+    try:
+        with pytest.raises(OSError, match="simulated storage failure"):
+            await engine.apply_settings(incoming)
+        assert engine.settings == previous
+        assert store.load()["settings"] is None
+    finally:
+        await engine.close()

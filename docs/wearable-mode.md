@@ -1,6 +1,47 @@
 # Raspberry Pi Wearable Mode
 
-Last reviewed: 2026-08-20
+## Module 65 session/audio update
+
+The app now offers Test Phone Audio before connection and explicitly labels
+muted object alerts. Signed commands/heartbeats use one sequence and the Pi's
+session clock; received timestamps retain their exact HMAC text, and Pi numbers
+use Dart-compatible canonical form. Stop cancels stale voice work and wearable
+alerts require Running. Failed settings sync cannot trigger the combined Start
+flow; Pi writes persist before live settings change. Fallback speech stops
+before phone output. mDNS uses the selected interface with failure cleanup.
+
+Software evidence: HOTSPOT_VERIFICATION_2026-10-09.md. Deploy both components;
+physical phone hotspot, Pi native inference and speaker acceptance remain open.
+
+## Module 61 connection and recovery
+
+The primary Connect & Start action spans discovery, trust, authentication,
+settings, and start/resume. Search is secondary; manual address/setup is under
+Connection options. A saved Pi selection keeps trust. A manually corrected
+address restores its saved credential using hello identity and authenticates.
+Every bounded retry rediscovers the current endpoint; hostname lookup times
+out. Network error/status ordering starts one automatic reconnect run.
+Authentication rejection never triggers automatic enrollment or retries.
+
+Cancel/background/dispose invalidate pending retries and commands; transport
+generation guards prevent reopening a socket after cancellation. Late phone
+alerts require foreground, connected state and the selected Pi ID. Android NSD
+serializes bounded resolve requests, guards old callbacks and owns only its
+own timeout. Reconnect honors Pi-reported assistance state; Start Detection is
+needed if the Pi rebooted to idle. Physical acceptance remains open.
+
+## Primary network: owner phone hotspot
+
+The owner enables Android Personal Hotspot and the Pi joins it as a
+NetworkManager Wi-Fi client. See `PHONE_HOTSPOT.md` for setup and physical
+acceptance. Android NSD discovers the Pi's current DHCP address, with a
+bounded multicast lock for older Android devices. `rpi3-ml.local` and the
+current private Pi address are manual fallbacks. The Pi install includes a
+NetworkManager Wi-Fi-up hook to revive the bounded service after reconnect.
+Hotspot DHCP does not guarantee a fixed IP; real TECNO BG6/Pi testing is open.
+
+
+Last reviewed: 2026-10-09
 
 ## Implemented architecture
 
@@ -30,6 +71,12 @@ an authenticated foreground connection, the Pi sends only bounded priority
 alerts to the phone's single voice/TTS owner. Disconnecting or backgrounding
 Flutter closes only the phone transport; it never sends Stop, so active Pi
 assistance continues and Pi-local speech becomes the fallback.
+
+For a connected session with Audio Alerts enabled, the Pi speaks no
+phone-target alert. Flutter announces its object name and left/ahead/right
+direction. Ordinary `detection_event` telemetry is silent to prevent repeated
+speech for every frame. A failed or timed-out platform utterance produces an
+accessible phone-audio warning; it does not imply the Pi spoke the alert.
 
 ## Directory structure
 
@@ -107,9 +154,10 @@ First enrollment is local and requires no displayed code:
 5. Forget Trusted Phone first revokes the active Pi credential, waits for the
    signed acknowledgement, then removes Android secure storage.
 
-The production UI is prefilled with `10.141.17.148:8765`; a fresh install can
-tap `Connect & Start Detection` directly. Use the editable address only if the
-Pi's DHCP address changes. First use enrolls,
+A fresh install searches for the Pi on the owner phone hotspot when
+`Connect & Start Detection` is tapped. If discovery fails, Connection options
+offers `rpi3-ml.local` or the Pi's current private DHCP address and port 8765.
+No university-network IP is prefilled or assumed. First use enrolls,
 authenticates, synchronizes settings, and starts detection in one action; later
 sessions reuse the Keystore credential. The app does not SSH into the Pi,
 request/embed a Pi password, or allow a manually entered IP to bypass protocol
@@ -153,15 +201,14 @@ For Debian 13's CPython 3.13 aarch64 environment, the expected wheel is
 with SHA-256
 `cc2c8000e4c0cae3fccc3ed5661c170f0daa41cfff41910407c10a62e9e586fc`.
 
-Copy the `raspberry_pi` directory and finalized model directory to the Pi. The
-configured address is currently `10.141.17.148`; use it only after confirming
-that it is still assigned and reachable from the same private LAN:
+Copy the `raspberry_pi` directory and finalized model directory to the Pi. Use the Pi's current reachable hostname/address on the owner hotspot;
+do not reuse a historical university-network address:
 
 ```sh
 # Run on the Mac from the repository root after SSH key access is configured.
-scp -r raspberry_pi <pi-user>@10.141.17.148:~/
-scp -r /path/to/yolov8n-oiv7_ncnn_model <pi-user>@10.141.17.148:~/
-ssh <pi-user>@10.141.17.148
+scp -r raspberry_pi <pi-user>@<current-pi-host>:~/
+scp -r /path/to/yolov8n-oiv7_ncnn_model <pi-user>@<current-pi-host>:~/
+ssh <pi-user>@<current-pi-host>
 ```
 
 Then run on the Pi:

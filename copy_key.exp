@@ -1,14 +1,11 @@
 #!/usr/bin/expect -f
-set timeout 10
-spawn ssh-copy-id -i /Users/mm/.ssh/id_ed25519_pi.pub asjad@10.141.16.27
-expect {
-    "Are you sure you want to continue connecting" {
-        send "yes\r"
-        exp_continue
-    }
-    "password:" {
-        send "asjad\r"
-        exp_continue
-    }
-    eof
+# Forward ssh-copy-id arguments and let SSH prompt interactively for credentials
+# and host-key verification. Never embed passwords or auto-accept host keys.
+if {$argc == 0} {
+    puts stderr "Usage: copy_key.exp ?-i public-key-file? user@private-host"
+    exit 2
 }
+spawn ssh-copy-id {*}$argv
+interact
+set result [wait]
+exit [lindex $result 3]

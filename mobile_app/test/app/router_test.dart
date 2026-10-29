@@ -1,4 +1,10 @@
+import 'package:ai_blind_assistant/app/assistant_providers.dart';
+import '../features/assistant/assistant_controller_test.dart'
+    show FakeAssistantCredentialRepository;
+import '../helpers/gemini_fakes.dart';
 import 'package:ai_blind_assistant/app/app.dart';
+import 'package:ai_blind_assistant/app/smart_ai_cloud_providers.dart';
+import '../helpers/smart_ai_cloud_fakes.dart';
 import 'package:ai_blind_assistant/app/router/app_route.dart';
 import 'package:ai_blind_assistant/app/router/app_router.dart';
 import 'package:ai_blind_assistant/app/theme/app_theme.dart';
@@ -49,7 +55,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(AppStrings.assistantTitle), findsWidgets);
-    expect(find.byKey(AppKeys.assistantPushToTalkButton), findsOneWidget);
+    expect(find.byKey(const Key('smart_ai_voice_circle')), findsOneWidget);
+    expect(find.byKey(const Key('smart_ai_setup')), findsOneWidget);
   });
 
   testWidgets('WT-ROUTER-004 back navigation returns from settings to home', (
@@ -65,7 +72,9 @@ void main() {
 
     expect(find.text(AppStrings.settingsTitle), findsWidgets);
 
-    await tester.pageBack();
+    await tester.tap(
+      find.byTooltip('Go back from ${AppStrings.settingsTitle}'),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(AppStrings.homeTitle), findsWidgets);
@@ -80,6 +89,20 @@ class _RouteHarness extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
+      overrides: [
+        assistantCredentialRepositoryProvider.overrideWithValue(
+          FakeAssistantCredentialRepository(),
+        ),
+        geminiConfigurationRepositoryProvider.overrideWithValue(
+          FakeGeminiConfigurationRepository(),
+        ),
+        smartAiAudioCoordinatorProvider.overrideWithValue(
+          FakeSmartAiAudioCoordinator([]),
+        ),
+        smartAiCloudConfigurationRepositoryProvider.overrideWithValue(
+          FakeSmartAiConfigurationRepository(),
+        ),
+      ],
       child: MaterialApp(
         initialRoute: initialRoute,
         onGenerateRoute: AppRouter.onGenerateRoute,

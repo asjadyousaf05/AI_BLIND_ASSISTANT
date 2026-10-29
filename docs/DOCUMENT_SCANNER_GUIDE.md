@@ -2,7 +2,28 @@
 
 **Project:** AI Blind Assistant  
 **Feature:** On-Device Document Scanner & Accessible Sentence-by-Sentence Reader  
-**Classification:** 100% Offline, Privacy-Preserving, Blind Accessibility First  
+**Classification:** Offline core scanner; optional paired-laptop text reasoning after explicit Send
+
+**Module 67 — 2026-10-15:** With hands-free enabled, reading keeps contextual
+voice controls active. Multiword controls such as “pause reading”, “stop
+reading”, “read first line”, “spell out”, “study mode” and “fast mode” can be
+claimed from stable recognition during ongoing speech, after reader/echo checks.
+Other actions still require final recognition. Current/recent spoken text is
+guarded against self-triggering; printed command collisions are conservative.
+If needed, say the branded wake phrase, wait for reading to stop and the
+acknowledgement, then give the command, or use touch. Speed changes restart the
+current line at the selected rate. Physical loudspeaker overlap remains a
+device test, not a guarantee from text-only tests. See
+[verification and physical matrix](READER_VOICE_VERIFICATION_2026-10-15.md).
+
+**Rescan framing follow-up — 2026-10-15:** “Scan again” and “restart scanner”
+stop old reading, clear the old page and return to the same live framing step
+as Scan Another Page. Take as much time as needed to point at the document,
+then say “scan document” or tap Scan. There is no countdown or automatic capture.
+This supersedes Module 66's immediate voice-rescan capture behavior. Explicit
+capture still performs local OCR/temporary-image cleanup and starts reading;
+“restart reading” still selects the first unit of the existing page. See the
+[follow-up verification](READER_VOICE_VERIFICATION_2026-10-15.md#rescan-framing-follow-up).
 
 ---
 
@@ -32,7 +53,7 @@ The **Document Scanner** allows blind and visually impaired users to independent
 1. **Real-Time Framing Guidance**: Live audio feedback helps the user center and align the document without needing sight.
 2. **Grammatical Sentence Segmentation**: Natural Language Processing joins OCR line-wraps and preserves abbreviations (*Dr.*, *Mr.*, *e.g.*, *$19.99*) so reading is fluent and grammatically correct.
 3. **Interactive Karaoke Player**: The user has full transport control to start, pause, resume, stop, jump to previous/next/first/last/numbered reading lines, or spell the selected line letter-by-letter.
-4. **Hands-Free Barge-In Voice Control**: The user can speak voice commands (*"Pause"*, *"Repeat"*, *"Scan"*, *"Stop"*) while the phone is reading, and it responds with sub-50ms latency.
+4. **Hands-Free Barge-In Voice Control**: The user can speak voice commands (*"Pause"*, *"Repeat"*, *"Scan"*, *"Stop"*) while the phone is reading. Response latency requires physical measurement.
 
 ---
 
@@ -69,7 +90,7 @@ flowchart TD
   * `moveHigher`: *"Move phone higher over document."*
   * `moveLower`: *"Move phone lower."*
   * `aligned`: *"Document aligned and ready to scan."*
-* **Safety & Privacy**: Preview frames are analyzed in transient native memory buffers and immediately recycled; no images are cached.
+* **Safety & Privacy**: Preview frames are analyzed in transient memory. Camera capture creates a temporary local image; the app deletes it after OCR or on an interrupted/error path before playback. Physical cache inspection remains an acceptance step.
 
 ### 3.2. On-Device Text Recognition Engine (ML Kit OCR)
 * Runs **100% offline** on the device neural accelerator.
@@ -126,7 +147,7 @@ Sentence 3: "Do not exceed dosage!"
 | *"Study mode"* / *"Skim mode"* | Changes speech profile | Adjusts rate and inter-sentence pause dynamically. |
 | *"Flashlight on"* / *"Torch off"* | Controls camera LED | Toggles hardware torch for optimal lighting. |
 | *"Copy text"* | Clipboard export | Copies complete recognized text for use in other apps. |
-| *"Ask AI"* | Summarization | Hands off text to Smart AI assistant for complex Q&A. |
+| *"Ask AI"* | Reviewable assistant draft | After disclosure, places recognized text in an editable draft. Nothing is sent until the user taps Send; answering requires the optional paired laptop and may use Gemini when enabled. |
 
 ---
 

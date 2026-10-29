@@ -17,7 +17,7 @@ void main() {
         const ProviderScope(child: AiBlindAssistantApp()),
       );
 
-      expect(find.bySemanticsLabel(AppStrings.continueToHome), findsOneWidget);
+      expect(find.bySemanticsLabel('Continue to home'), findsOneWidget);
 
       await tester.ensureVisible(find.byKey(AppKeys.startupContinueButton));
       await tester.tap(find.byKey(AppKeys.startupContinueButton));

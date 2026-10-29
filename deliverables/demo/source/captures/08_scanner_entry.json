@@ -1,0 +1,132 @@
+[
+  {
+    "label": "Mode Selection",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Go back from Mode Selection",
+    "bounds": [
+      8,
+      56,
+      104,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Mode Selection",
+    "bounds": [
+      206,
+      78,
+      514,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Select Mobile Mode, Use the Android phone camera for offline on-device object detection.",
+    "bounds": [
+      48,
+      160,
+      672,
+      198
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Select Raspberry Pi wearable mode, Use a paired local Raspberry Pi wearable for camera detection and Pi-owned feedback.",
+    "bounds": [
+      48,
+      230,
+      672,
+      598
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Confirm selected Mobile Mode",
+    "bounds": [
+      48,
+      646,
+      672,
+      758
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Open Document Scanner, Read text from a document aloud using the phone camera.",
+    "bounds": [
+      48,
+      790,
+      672,
+      1018
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Local operation only",
+    "bounds": [
+      184,
+      1090,
+      511,
+      1136
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Mobile inference stays on the phone. Wearable Mode uses only an authenticated connection to the paired Pi on the local network.",
+    "bounds": [
+      184,
+      1144,
+      632,
+      1304
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Home\nTab 1 of 4",
+    "bounds": [
+      0,
+      1392,
+      180,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Modes\nTab 2 of 4",
+    "bounds": [
+      180,
+      1392,
+      360,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Wearable\nTab 3 of 4",
+    "bounds": [
+      360,
+      1392,
+      540,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Settings\nTab 4 of 4",
+    "bounds": [
+      540,
+      1392,
+      720,
+      1552
+    ],
+    "clickable": true
+  }
+]

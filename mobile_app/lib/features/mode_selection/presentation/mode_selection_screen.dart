@@ -60,8 +60,7 @@ class ModeSelectionScreen extends ConsumerWidget {
           status: selectedMode == OperatingMode.mobile
               ? 'Selected and available'
               : 'Available now',
-          semanticLabel:
-              '${OperatingMode.mobile.label}, ${selectedMode == OperatingMode.mobile ? 'selected' : 'not selected'}',
+          semanticLabel: 'Select Mobile Mode',
           onTap: () => controller.selectOperatingMode(OperatingMode.mobile),
         ),
         const SizedBox(height: AppSpacing.space4),
@@ -73,8 +72,7 @@ class ModeSelectionScreen extends ConsumerWidget {
           icon: AppIcons.bluetooth,
           selected: selectedMode == OperatingMode.raspberryPi,
           status: AppStrings.raspberryPiDeferred,
-          semanticLabel:
-              '${OperatingMode.raspberryPi.label}, ${selectedMode == OperatingMode.raspberryPi ? 'selected' : 'not selected'}, local wearable controls available',
+          semanticLabel: 'Select Raspberry Pi wearable mode',
           onTap: () =>
               controller.selectOperatingMode(OperatingMode.raspberryPi),
         ),
@@ -116,8 +114,10 @@ class _DocumentScannerTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label:
-          'Scan Document — open the camera to read text from a document aloud',
+      label: 'Open Document Scanner',
+      hint: 'Read text from a document aloud using the phone camera.',
+      onTap: () => Navigator.of(context).pushNamed(RoutePaths.ocrScanner),
+      excludeSemantics: true,
       child: Card(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),

@@ -32,6 +32,9 @@ internal object VisionAiSpeechGrammar {
         "hay vision ai",
         "hey version ai",
         "hi visual ai",
+        "listen vision ai",
+        "listen vision a i",
+        "listen vision eye",
         "[unk]",
     )
 
@@ -82,6 +85,11 @@ internal object VisionAiSpeechGrammar {
             "capture now",
             "rescan",
             "scan again",
+            "restart scanner",
+            "restart the scanner",
+            "restart document scanner",
+            "scan document again",
+            "rescan document",
             "scan another",
             "scan another document",
             "scan another page",
@@ -300,8 +308,12 @@ internal object VisionAiSpeechGrammar {
             "proceed",
             "no",
             "cancel",
-            "bye",
-            "by",
+            "bye vision ai",
+            "goodbye vision ai",
+            "good bye vision ai",
+            "end voice session",
+            "exit smart ai",
+            "close smart ai",
             "goodbye",
             "good bye",
             "stop listening",
@@ -329,9 +341,17 @@ internal object VisionAiSpeechGrammar {
         val politePrefixes = listOf(
             "please",
             "can you",
+            "can you please",
             "could you",
+            "could you please",
             "would you",
+            "would you please",
             "please can you",
+        )
+        core += listOf(
+            "go home", "open home", "go back", "open settings", "go to settings",
+            "open about", "open about page", "open about and safety",
+            "open setting", "open setting page", "open settings page",
         )
         for (phrase in core) {
             phrases += phrase
@@ -345,6 +365,7 @@ internal object VisionAiSpeechGrammar {
             phrases += "can you $phrase"
         }
         phrases += "[unk]"
+        phrases += wakePhrases
         return phrases.toList()
     }
 
@@ -655,8 +676,12 @@ internal object VisionAiSpeechGrammar {
             "no",
             "cancel",
             "never mind",
-            "bye",
-            "by",
+            "bye vision ai",
+            "goodbye vision ai",
+            "good bye vision ai",
+            "end voice session",
+            "exit smart ai",
+            "close smart ai",
             "goodbye",
             "good bye",
             "exit assistant",
@@ -668,6 +693,23 @@ internal object VisionAiSpeechGrammar {
             "[unk]",
         )
 
+        // Short feature verbs are resolved only in their active screen context.
+        phrases += listOf("stop", "pause", "resume", "continue")
+        // Bounded navigation alternatives are shared by both focused graphs.
+        phrases += listOf(
+            "go home", "open home", "go back", "open settings", "go to settings",
+            "open about", "open about page", "open about and safety",
+            "open setting", "open setting page", "open settings page",
+        )
+        val politePrefixes = listOf(
+            "please", "can you", "can you please", "could you",
+            "could you please", "would you", "would you please",
+        )
+        for (phrase in phrases.toList()) {
+            if (phrase == "[unk]") continue
+            for (prefix in politePrefixes) phrases += "$prefix $phrase"
+        }
+        phrases += wakePhrases
         return phrases.toList()
     }
 }

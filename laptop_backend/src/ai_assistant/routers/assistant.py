@@ -6,14 +6,17 @@ import json
 import logging
 import os
 import tempfile
+import uuid
 from datetime import UTC
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from ..models.schemas import (
     AssistantResponseSchema,
+    AudioQueryRequest,
     DailySummaryResponse,
     HistoryResponse,
     NotesResponse,
@@ -27,6 +30,7 @@ from ..services.transcription import TranscriptionError
 from ..services.user_data import (
     AuditService,
     ConversationService,
+    MemoryService,
     NoteService,
     PreferenceService,
     ReminderService,
@@ -75,6 +79,7 @@ async def text_query(
     audit_svc = AuditService(req.app.state.db)
 
     history = [{"role": m.role, "content": m.content} for m in body.history]
+    req.app.state.pending_server_tools.pop(user_id, None)
 
     parsed = match_local_command(body.query)
     provider_label = "deterministic"
@@ -105,22 +110,25 @@ async def text_query(
                 data = json.loads(ai_response.content)
                 if isinstance(data, dict):
                     extracted_text = str(data.get("response_text", "")).strip()
-            except Exception:
-                pass
+            except json.JSONDecodeError:
+                extracted_text = ""
             if not extracted_text:
                 extracted_text = ai_response.content.strip()
 
             parsed = ParsedModelResponse(
-                response_text=extracted_text[:1024] if (extracted_text and len(extracted_text) > 3) else "I'm sorry, I can't perform that action.",
-                request_id="",
+                response_text=extracted_text[:1024]
+                if (extracted_text and len(extracted_text) > 3)
+                else "I'm sorry, I can't perform that action.",
+                request_id=uuid.uuid4().hex,
             )
 
     # Execute server-side tools
     if parsed.tool_call and ToolRegistry.is_server_side(parsed.tool_call["name"]):
-        result_text = await _execute_server_tool(parsed.tool_call, user_id, req)
-        if result_text:
-            parsed.response_text = result_text
-            parsed.tool_call = None  # Don't forward to phone
+        if parsed.requires_confirmation:
+            req.app.state.pending_server_tools[user_id] = (parsed.request_id, parsed.tool_call)
+        else:
+            parsed.response_text = await _execute_server_tool(parsed.tool_call, user_id, req)
+            parsed.tool_call = None
 
     # Persist conversation
     if req.app.state.settings.persist_conversation_history:
@@ -135,9 +143,7 @@ async def text_query(
     return AssistantResponseSchema(
         response_text=parsed.response_text,
         request_id=parsed.request_id,
-        tool_call=ToolCallSchema(**parsed.tool_call)
-        if parsed.tool_call and not ToolRegistry.is_server_side(parsed.tool_call["name"])
-        else None,
+        tool_call=ToolCallSchema(**parsed.tool_call) if parsed.tool_call else None,
         requires_confirmation=parsed.requires_confirmation,
         confirmation_prompt=parsed.confirmation_prompt,
     )
@@ -158,9 +164,8 @@ async def audio_query(
     """Accept an audio upload, transcribe it, and return an AI response."""
     content_type = (audio.content_type or "").lower()
     filename = (audio.filename or "").lower()
-    is_valid_type = (
-        content_type in _ALLOWED_AUDIO_TYPES
-        or filename.endswith((".m4a", ".wav", ".aac", ".mp3", ".ogg", ".webm", ".3gp"))
+    is_valid_type = content_type in _ALLOWED_AUDIO_TYPES or filename.endswith(
+        (".m4a", ".wav", ".aac", ".mp3", ".ogg", ".webm", ".3gp")
     )
     if not is_valid_type:
         raise HTTPException(
@@ -168,7 +173,7 @@ async def audio_query(
             detail="Audio must be an M4A or WAV recording.",
         )
     # Validate content size
-    content = await audio.read()
+    content = await audio.read(_MAX_AUDIO_BYTES + 1)
     if len(content) > _MAX_AUDIO_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -182,13 +187,17 @@ async def audio_query(
 
     # Parse history
     try:
-        parsed_history = json.loads(history) if history else []
-    except json.JSONDecodeError:
-        parsed_history = []
+        validated_history = AudioQueryRequest(history=json.loads(history or "[]")).history
+    except (json.JSONDecodeError, ValidationError) as error:
+        raise HTTPException(status_code=422, detail="Invalid conversation history.") from error
 
     # Write to temp file
     orig_ext = os.path.splitext(audio.filename or "")[1].lower()
-    suffix = orig_ext if orig_ext in {".m4a", ".wav", ".aac", ".mp4", ".ogg", ".webm", ".3gp", ".mp3"} else ".m4a"
+    suffix = (
+        orig_ext
+        if orig_ext in {".m4a", ".wav", ".aac", ".mp4", ".ogg", ".webm", ".3gp", ".mp3"}
+        else ".m4a"
+    )
     tmp_path: str
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)
@@ -220,18 +229,14 @@ async def audio_query(
             pass
 
     # Delegate to text query logic
-    from ..models.schemas import ConversationMessage
+    try:
+        text_body = TextQueryRequest(query=transcript.strip(), history=validated_history)
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail="No usable speech was recognized.") from error
 
-    text_body = TextQueryRequest(
-        query=transcript,
-        history=[
-            ConversationMessage(role=m["role"], content=m["content"])
-            for m in parsed_history
-            if isinstance(m, dict) and "role" in m and "content" in m
-        ],
-    )
-
-    return await text_query(text_body, req, user_id)
+    response = await text_query(text_body, req, user_id)
+    response.user_transcript = transcript
+    return response
 
 
 def _audio_duration_seconds(audio_path: str) -> float:
@@ -251,20 +256,24 @@ def _audio_duration_seconds(audio_path: str) -> float:
                 and audio_stream.time_base is not None
             ):
                 return float(audio_stream.duration * audio_stream.time_base)
+            # Unknown metadata must not bypass the duration bound. Decode locally
+            # and stop as soon as the actual sample count crosses the limit.
             if audio_stream is not None:
-                return 5.0
-    except Exception:
-        try:
-            size = os.path.getsize(audio_path)
-            if 256 <= size <= _MAX_AUDIO_BYTES:
-                return 5.0
-        except Exception:
-            pass
+                duration = 0.0
+                for frame in container.decode(audio_stream):
+                    if not frame.sample_rate:
+                        break
+                    duration += frame.samples / frame.sample_rate
+                    if duration > _MAX_AUDIO_SECONDS:
+                        return duration
+                if duration > 0:
+                    return duration
+    except (OSError, ValueError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="The audio recording is invalid or unreadable.",
-        )
-    return 5.0
+        ) from error
+    raise HTTPException(status_code=422, detail="The recording contains no readable audio.")
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +292,24 @@ async def tool_result(
     audit_svc = AuditService(req.app.state.db)
 
     result = body.tool_result
-    response_text = _format_phone_tool_result(result)
+    if ToolRegistry.is_server_side(result.tool_name):
+        pending = req.app.state.pending_server_tools.get(user_id)
+        if (
+            pending is None
+            or pending[0] != body.request_id
+            or pending[1]["name"] != result.tool_name
+        ):
+            raise HTTPException(
+                status_code=409, detail="No matching pending action. Request it again."
+            )
+        req.app.state.pending_server_tools.pop(user_id)
+        response_text = (
+            await _execute_server_tool(pending[1], user_id, req)
+            if result.success
+            else "Action cancelled."
+        )
+    else:
+        response_text = _format_phone_tool_result(result)
 
     if req.app.state.settings.persist_conversation_history:
         conversation_svc.append(
@@ -430,7 +456,7 @@ async def _execute_server_tool(
     tool_call: dict,
     user_id: str,
     req: Request,
-) -> str | None:
+) -> str:
     """Execute a backend-side tool and return a voice-friendly result string."""
     name = tool_call["name"]
     args = tool_call.get("arguments", {})
@@ -485,7 +511,7 @@ async def _execute_server_tool(
 
         elif name == "list_reminders":
             svc = ReminderService(db)
-            items = svc.list(user_id)
+            items = svc.list(user_id, include_completed=args.get("include_completed", False))
             if not items:
                 return "You have no pending reminders."
             titles = ", ".join(r["title"] for r in items[:5])
@@ -526,6 +552,17 @@ async def _execute_server_tool(
             ok = svc.delete(user_id, args["entry_id"])
             return "Schedule entry deleted." if ok else "Entry not found."
 
+        elif name == "update_schedule_entry":
+            svc = ScheduleService(db)
+            ok = svc.update(
+                user_id, args["entry_id"], **{k: v for k, v in args.items() if k != "entry_id"}
+            )
+            return "Schedule entry updated." if ok else "Entry not found."
+
+        elif name == "forget_memory":
+            ok = MemoryService(db).forget(user_id, args["memory_id"])
+            return "Saved memory deleted." if ok else "Saved memory not found."
+
         elif name == "save_preference":
             svc = PreferenceService(db)
             svc.save(user_id, key=args["key"], value=args["value"])
@@ -553,7 +590,7 @@ async def _execute_server_tool(
             )
 
         else:
-            return None
+            return "That assistant action is unavailable."
 
     except Exception as error:  # noqa: BLE001 - isolate dynamic tool failures
         logger.error("Server tool execution failed: %s", type(error).__name__)

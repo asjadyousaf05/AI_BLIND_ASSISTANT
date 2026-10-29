@@ -1,6 +1,106 @@
 # Build and Run
 
-Last reviewed: 2026-08-20
+
+
+## Smart AI listening-cue APK — 2026-10-21
+
+[APK 1.4.15/code 4055](../deliverables/AI-Blind-Assistant-1.4.15-smart-ai-ready-cue.apk)
+adds Smart AI microphone-ready accessibility vibration and
+a short local chime. Source version/signing/dependencies remain unchanged; build
+flags set artifact version. Owner requested APK delivery and later testing, so
+there is no installation/physical acceptance in this pass. Install as an update
+to retain keys/data, then use Test listening vibration and sound without any API
+request. [Checks, APK and hashes](SMART_AI_READY_CUE_2026-10-21.md).
+
+## Smart AI circle build — 2026-10-20
+
+Current matching-phone release is **1.4.13/code 4053**, installed as an in-place
+update with saved configuration intact. It adds per-turn English/Urdu replies,
+hold/vibrate/release circle, local pause/resume/interrupt and recorded goodbye
+→ Home. No source version/signing/dependency/native/Vision AI change.
+
+[Exact build/signature/hash/install/test evidence](SMART_AI_CIRCLE_2026-10-20.md)
+and [phone APK](../deliverables/AI-Blind-Assistant-1.4.13-smart-ai-circle.apk).
+Use saved Groq mode. Open Smart AI and physically check both languages, haptic,
+hold/release, pause/resume and goodbye; owner confirmation remains pending.
+
+## Smart AI cloud speech setup — 2026-10-19/20
+
+Install current matching-phone 1.4.12 and select Groq for speech and answers in
+Assistant → connection settings → Smart AI cloud audio. Reuse the encrypted
+saved Groq key or enter a personal key, review destination/privacy/quotas and
+give renewed consent. No `.env`, laptop, shared APK key or new dependency is
+needed. Gemini/laptop/Pi credentials stay separate. Both speech and answers
+need Groq account/model access and internet; phone TTS uses installed offline
+Urdu/English voices. Ask using Speak → Send recording or typed input.
+
+For Urdu, install its voice pack under Android text-to-speech settings if absent.
+1.4.12 automatically selects offline Urdu/English only for Smart AI and restores
+English after speech/exit. Read last answer aloud retries local speech without
+another API request. Do not paste credentials into chat/source/logs.
+
+The optional AgentRouter mode needs separate personal keys and client approval;
+actual metadata returns `unauthorized_client_error` for a custom client. Do not
+assume a new key fixes that restriction, impersonate a supported client or add
+silent fallback. The owner explicitly chose Groq as the replacement.
+[Exact commands, hashes, installed version and gates](SMART_AI_CLOUD_AUDIO_2026-10-19.md).
+
+## Phone hotspot and direct Gemini — 2026-10-19
+
+Use [PHONE_HOTSPOT.md](PHONE_HOTSPOT.md) for both laptop and Pi as clients of
+the phone hotspot. The app uses current DHCP addresses, not a university-IP
+preset. Connect Assistant restores saved laptop trust; alternatively select
+Gemini without a laptop, enter a personal key and explicitly agree to its
+text/history/free-tier disclosure. No key is bundled with the app.
+[Module 69 evidence](HOTSPOT_AND_GEMINI_VERIFICATION_2026-10-19.md) records the
+data-preserving phone installation and actual Pi runtime/deployment.
+
+Last reviewed: 2026-10-15
+
+## Current phone Smart AI connection
+
+The laptop backend runs through its existing launch service at
+`http://192.168.10.5:8765`; local Ollama llama3.2:3b is available. Phone pairing
+and one synthetic typed reply are verified. The old 10.141.17.235 connection
+preset does not describe the current LAN: use the explicitly paired current
+address. Pairing rotates the backend's single device credential, so the earlier
+emulator credential is replaced. Keep laptop/phone on the reachable private LAN.
+Exact results are in the reader verification's phone runtime follow-up.
+
+## Latest release follow-up — 2026-10-15
+
+The owner's later emulator run request updated medium_phone/emulator-5554 to
+this same release 1.4.5/code 4045. Installed hash/non-debuggable flags verified;
+launch Status ok (715 ms), app alive/resumed, zero current-process fatal markers.
+The release app and emulator remain running.
+
+Scanner framing release 1.4.5/code 4045 passes the full Flutter suite, analysis,
+format and ARM64 debug/release builds. Signature/alignment/AOT verification
+passed; installed phone checksum matches, DEBUGGABLE is absent, first-install
+time is preserved and launch passed (3391 ms; alive/resumed; zero current-process
+fatal markers). Use the same APK path and non-incremental update command below. Exact artifact and deployment results:
+[follow-up report](READER_VOICE_VERIFICATION_2026-10-15.md#rescan-framing-follow-up).
+
+## Earlier Module 67 release — 2026-10-15
+
+Module 67's signed ARM64 release `1.4.4` / split code `4044` is installed and
+running on the authorized TECNO LE6 (Android 11/API 30). The installed SHA-256
+matches the release, DEBUGGABLE is absent, first-install time is preserved and
+cold launch passed (5090 ms; alive/resumed; zero current-process fatal markers).
+Exact commands and checksums:
+[READER_VOICE_VERIFICATION_2026-10-15.md](READER_VOICE_VERIFICATION_2026-10-15.md).
+At that phase the emulator retained Module 66 release 1.4.3; the later runtime
+follow-up above updates it to 1.4.5.
+Install `mobile_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
+using `adb -s <authorized-device> install --no-incremental -r <apk>`. Verify
+package version, installed checksum, non-debuggable flags and launch afterward.
+An earlier phone incremental install reported Success without a queryable
+package; its recovery changed the installation timestamp. Never uninstall or
+clear data to bypass a signing mismatch. The earlier TECNO BG6's development
+signer differs from the project release signer; compare before updating an
+existing installation. The later TECNO LE6 had no existing package and accepted
+the project release signer. Historical deliverables/hashes below retain their
+own dated identities.
 
 ## Verified Project Environment
 
@@ -79,7 +179,7 @@ The short form is:
 cd /Users/mm/AI_BLIND_ASSISTANT/laptop_backend
 uv venv --python 3.11 .venv
 uv pip install --python .venv/bin/python -e '.[dev]'
-.venv/bin/python scripts/prepare_whisper_model.py --model base
+.venv/bin/python scripts/prepare_whisper_model.py --model medium
 ollama pull llama3.2:3b
 ollama serve
 ```

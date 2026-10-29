@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class TranscriptionProvider(Protocol):
-    def transcribe(self, audio_path: str | Path, language: str = "en") -> str: ...
+    def transcribe(self, audio_path: str | Path, language: str | None = None) -> str: ...
 
     def is_available(self) -> bool: ...
 
@@ -35,7 +35,7 @@ class WhisperTranscriptionProvider:
 
     def __init__(
         self,
-        model_size: str = "base",
+        model_size: str = "medium",
         language: str = "en",
         *,
         local_files_only: bool = True,
@@ -73,7 +73,7 @@ class WhisperTranscriptionProvider:
     def is_available(self) -> bool:
         return self._available
 
-    def transcribe(self, audio_path: str | Path, language: str = "en") -> str:
+    def transcribe(self, audio_path: str | Path, language: str | None = None) -> str:
         if not self._available or self._model is None:
             raise TranscriptionError(
                 "Whisper model is not available. "
@@ -82,7 +82,7 @@ class WhisperTranscriptionProvider:
 
         audio_path = Path(audio_path)
         if not audio_path.exists():
-            raise TranscriptionError(f"Audio file not found: {audio_path}")
+            raise TranscriptionError("The audio recording is unavailable. Please record it again.")
 
         size_bytes = audio_path.stat().st_size
         if size_bytes < 256:
@@ -91,22 +91,39 @@ class WhisperTranscriptionProvider:
             raise TranscriptionError("Audio file exceeds maximum size (4 MB).")
 
         try:
+            selected_language = language if language is not None else self._language
             segments, _info = self._model.transcribe(
                 str(audio_path),
-                language=language,
+                language=None if selected_language == "auto" else selected_language,
                 beam_size=5,
+                temperature=0.0,
+                condition_on_previous_text=False,
                 word_timestamps=False,
-                initial_prompt="Voice assistant for visually impaired user. Everyday conversational queries, commands, questions, notes, reminders, navigation, scanning, help.",
                 vad_filter=True,
             )
-            text = " ".join(seg.text.strip() for seg in segments).strip()
+            parts = []
+            for segment in segments:
+                part = segment.text.strip()
+                if not part:
+                    continue
+                # Reject the whole utterance rather than silently dropping an
+                # unclear segment that could contain a negation or tool argument.
+                if segment.avg_logprob < -1.0 or segment.compression_ratio > 2.4:
+                    raise TranscriptionError(
+                        "Speech was unclear. Please repeat your full question or type it."
+                    )
+                parts.append(part)
+            text = " ".join(parts)
             if not text:
                 raise TranscriptionError("No speech detected in the audio.")
             return text
         except TranscriptionError:
             raise
-        except Exception as e:
-            raise TranscriptionError(f"Transcription failed: {e}") from e
+        except Exception as error:
+            # Decoder exceptions can contain local paths or audio details.
+            raise TranscriptionError(
+                "Speech could not be recognized. Please record your question again."
+            ) from error
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +137,7 @@ class SimulatedTranscriptionProvider:
     def is_available(self) -> bool:
         return True
 
-    def transcribe(self, audio_path: str | Path, language: str = "en") -> str:
+    def transcribe(self, audio_path: str | Path, language: str | None = None) -> str:
         logger.debug("SimulatedTranscriptionProvider: returning fixed transcript")
         return "Please set a reminder for tomorrow at eight PM"
 

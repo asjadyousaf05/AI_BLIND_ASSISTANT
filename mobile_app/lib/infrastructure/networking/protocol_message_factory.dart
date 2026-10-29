@@ -17,6 +17,34 @@ class ProtocolMessageFactory {
   final WearableClock _clock;
   final Random _random;
   int _nextSequence;
+  DateTime? _peerTime;
+  Stopwatch? _peerElapsed;
+
+  /// Use the Pi's session clock without changing either device's system time.
+  /// A Pi without an RTC can boot offline with a different wall clock.
+  void synchronizePeerClock(DateTime timestamp) {
+    _peerTime = timestamp.toUtc();
+    _peerElapsed = Stopwatch()..start();
+  }
+
+  DateTime get _timestamp =>
+      _peerTime?.add(_peerElapsed!.elapsed) ?? _clock().toUtc();
+
+  /// Allocate sequence numbers at the common signing boundary. Commands and
+  /// transport-generated heartbeats otherwise have independent counters.
+  ProtocolEnvelope stampForSession(ProtocolEnvelope message) {
+    return ProtocolEnvelope(
+      protocolVersion: message.protocolVersion,
+      type: message.type,
+      messageId: message.messageId,
+      // Authentication's proof already includes this exact timestamp.
+      timestamp: message.type == ProtocolMessageType.authentication
+          ? message.timestamp
+          : _timestamp,
+      sequence: _nextSequence++,
+      payload: message.payload,
+    );
+  }
 
   ProtocolEnvelope create(
     ProtocolMessageType type, {
@@ -26,7 +54,7 @@ class ProtocolMessageFactory {
       protocolVersion: ProtocolEnvelope.currentVersion,
       type: type,
       messageId: _secureId(_random),
-      timestamp: _clock().toUtc(),
+      timestamp: _timestamp,
       sequence: _nextSequence++,
       payload: Map<String, Object?>.unmodifiable(payload),
     );
@@ -37,7 +65,7 @@ class ProtocolMessageFactory {
     Map<String, Object?> Function(String messageId, DateTime timestamp) builder,
   ) {
     final messageId = _secureId(_random);
-    final timestamp = _clock().toUtc();
+    final timestamp = _timestamp;
     return ProtocolEnvelope(
       protocolVersion: ProtocolEnvelope.currentVersion,
       type: type,

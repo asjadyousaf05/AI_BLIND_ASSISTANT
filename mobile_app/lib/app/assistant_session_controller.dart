@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
@@ -6,15 +7,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/lifecycle/app_lifecycle_observer.dart';
 import '../domain/entities/assistant_credential.dart';
+import '../domain/entities/gemini_configuration.dart';
 import '../domain/entities/assistant_message.dart';
 import '../domain/entities/assistant_response.dart';
 import '../domain/entities/assistant_tool_result.dart';
 import '../domain/enums/assistant_failure_kind.dart';
+import '../domain/enums/assistant_backend_status.dart';
 import '../domain/enums/assistant_session_state.dart';
 import '../domain/enums/detection_environment_mode.dart';
 import '../domain/enums/detection_sensitivity.dart';
 import '../domain/enums/feedback_mode.dart';
 import '../domain/enums/microphone_permission_status.dart';
+import '../domain/services/audio_recorder_service.dart';
+import '../domain/services/gemini_conversation_service.dart';
 import '../domain/enums/mobile_assistance_state.dart';
 import '../domain/repositories/assistant_repository.dart';
 import 'voice_kernel/voice_kernel_providers.dart';
@@ -46,6 +51,8 @@ class AssistantControllerState {
     this.errorMessage,
     this.failureKind,
     this.pendingRequestId,
+    this.backendStatus = AssistantBackendStatus.notChecked,
+    this.geminiConfiguration,
   });
 
   final AssistantSessionState sessionState;
@@ -63,8 +70,11 @@ class AssistantControllerState {
 
   /// Pending request ID for tool confirmation idempotency.
   final String? pendingRequestId;
+  final AssistantBackendStatus backendStatus;
+  final GeminiConfiguration? geminiConfiguration;
 
   bool get isPaired => credential?.isValid ?? false;
+  bool get usesDirectGemini => geminiConfiguration?.isValid ?? false;
 
   AssistantControllerState copyWith({
     AssistantSessionState? sessionState,
@@ -75,6 +85,9 @@ class AssistantControllerState {
     String? errorMessage,
     AssistantFailureKind? failureKind,
     String? pendingRequestId,
+    AssistantBackendStatus? backendStatus,
+    GeminiConfiguration? geminiConfiguration,
+    bool clearGeminiConfiguration = false,
     bool clearPendingResponse = false,
     bool clearError = false,
   }) => AssistantControllerState(
@@ -88,6 +101,10 @@ class AssistantControllerState {
     errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
     failureKind: clearError ? null : (failureKind ?? this.failureKind),
     pendingRequestId: pendingRequestId ?? this.pendingRequestId,
+    backendStatus: backendStatus ?? this.backendStatus,
+    geminiConfiguration: clearGeminiConfiguration
+        ? null
+        : geminiConfiguration ?? this.geminiConfiguration,
   );
 }
 
@@ -120,18 +137,28 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   AppLifecycleObserver? _lifecycleObserver;
   late final SpeechOutputService _speechOutput;
   late final OnDeviceSpeechRecognitionService _speechRecognizer;
+  late final AudioRecorderService _audioRecorder;
 
   // Guards
   bool _sessionInProgress = false;
   bool _speechActive = false;
+  Future<void>? _credentialLoadFuture;
+  Future<void>? _backendConnectionFuture;
+  int _credentialGeneration = 0;
+  Future<void>? _geminiLoadFuture;
+  int _geminiGeneration = 0;
+  int _directQueryGeneration = 0;
+  bool _manualUsesLaptop = false;
 
   @override
   AssistantControllerState build() {
     _speechOutput = ref.read(speechOutputServiceProvider);
     _speechRecognizer = ref.read(onDeviceSpeechRecognitionServiceProvider);
+    _audioRecorder = ref.read(audioRecorderServiceProvider);
     ref.onDispose(_cleanup);
     _setupLifecycleObserver();
-    _loadStoredCredential();
+    unawaited(loadStoredCredential());
+    unawaited(loadGeminiConfiguration());
     return const AssistantControllerState(
       sessionState: AssistantSessionState.idle,
     );
@@ -141,15 +168,140 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   // Pairing
   // ---------------------------------------------------------------------------
 
-  Future<void> loadStoredCredential() async {
-    await _loadStoredCredential();
+  Future<void> loadGeminiConfiguration() =>
+      _geminiLoadFuture ??= _loadGeminiConfiguration();
+
+  Future<void> _loadGeminiConfiguration() async {
+    final generation = _geminiGeneration;
+    try {
+      final configuration = await ref
+          .read(geminiConfigurationRepositoryProvider)
+          .load();
+      if (ref.mounted &&
+          generation == _geminiGeneration &&
+          configuration != null) {
+        state = state.copyWith(geminiConfiguration: configuration);
+      }
+    } catch (_) {
+      // Missing/unreadable storage never enables cloud requests.
+    }
   }
 
+  Future<String?> enableDirectGemini(GeminiConfiguration configuration) async {
+    if (_sessionInProgress) {
+      return 'Finish or cancel the current request first.';
+    }
+    if (!configuration.isValid) {
+      return 'Enter a valid Gemini API key and model name.';
+    }
+    _geminiGeneration++;
+    try {
+      await ref.read(geminiConfigurationRepositoryProvider).save(configuration);
+      if (!ref.mounted) return null;
+      _directQueryGeneration++;
+      state = state.copyWith(
+        geminiConfiguration: configuration,
+        conversationHistory: const [],
+        sessionState: AssistantSessionState.idle,
+        clearError: true,
+        clearPendingResponse: true,
+      );
+      return null;
+    } catch (_) {
+      return 'Could not save Gemini settings securely. Please try again.';
+    }
+  }
+
+  Future<String?> disableDirectGemini() async {
+    if (_sessionInProgress) {
+      return 'Finish or cancel the current request first.';
+    }
+    _geminiGeneration++;
+    try {
+      await ref.read(geminiConfigurationRepositoryProvider).delete();
+      if (!ref.mounted) return null;
+      _directQueryGeneration++;
+      ref.read(geminiConversationServiceProvider).cancelPending();
+      state = state.copyWith(
+        clearGeminiConfiguration: true,
+        conversationHistory: const [],
+        sessionState: AssistantSessionState.idle,
+        clearError: true,
+        clearPendingResponse: true,
+      );
+      return null;
+    } catch (_) {
+      return 'Could not remove the Gemini key securely. Please try again.';
+    }
+  }
+
+  Future<void> loadStoredCredential() =>
+      _credentialLoadFuture ??= _loadStoredCredential();
+
   Future<void> _loadStoredCredential() async {
-    final repo = ref.read(assistantCredentialRepositoryProvider);
-    final credential = await repo.loadCredential();
-    if (credential?.isValid ?? false) {
-      state = state.copyWith(credential: credential);
+    final generation = _credentialGeneration;
+    try {
+      final repo = ref.read(assistantCredentialRepositoryProvider);
+      final credential = await repo.loadCredential();
+      if (ref.mounted &&
+          generation == _credentialGeneration &&
+          (credential?.isValid ?? false)) {
+        state = state.copyWith(credential: credential);
+      }
+    } catch (_) {
+      // Do not expose storage errors or credentials. Explicit pairing remains
+      // available; opening Smart AI never invents or bypasses saved trust.
+    }
+  }
+
+  /// Check the explicitly paired laptop on screen entry/retry, without sending
+  /// conversation text or blocking microphone and deterministic app controls.
+  Future<void> connectBackend() {
+    final pending = _backendConnectionFuture;
+    if (pending != null) return pending;
+    final operation = _checkBackendConnection();
+    _backendConnectionFuture = operation;
+    unawaited(
+      operation.whenComplete(() {
+        if (identical(_backendConnectionFuture, operation)) {
+          _backendConnectionFuture = null;
+        }
+      }),
+    );
+    return operation;
+  }
+
+  Future<void> _checkBackendConnection() async {
+    await loadGeminiConfiguration();
+    if (!ref.mounted || state.usesDirectGemini) return;
+    await loadStoredCredential();
+    if (!ref.mounted) return;
+    final credential = state.credential;
+    if (credential == null || !credential.isValid) return;
+    final generation = _credentialGeneration;
+    state = state.copyWith(backendStatus: AssistantBackendStatus.checking);
+    var status = AssistantBackendStatus.unavailable;
+    try {
+      final version = await ref
+          .read(assistantRepositoryProvider)
+          .checkHealth(credential)
+          .timeout(const Duration(seconds: 8));
+      status = version == null
+          ? AssistantBackendStatus.unavailable
+          : version == credential.protocolVersion
+          ? AssistantBackendStatus.reachable
+          : AssistantBackendStatus.incompatible;
+    } on AssistantAuthException {
+      status = AssistantBackendStatus.authenticationFailed;
+    } on AssistantVersionException {
+      status = AssistantBackendStatus.incompatible;
+    } catch (_) {
+      status = AssistantBackendStatus.unavailable;
+    }
+    if (ref.mounted &&
+        generation == _credentialGeneration &&
+        identical(state.credential, credential)) {
+      state = state.copyWith(backendStatus: status);
     }
   }
 
@@ -157,6 +309,8 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
     required String backendUrl,
     required String pairingCode,
   }) async {
+    _credentialGeneration++;
+    _backendConnectionFuture = null;
     try {
       final assistantRepo = ref.read(assistantRepositoryProvider);
       final credential = await assistantRepo.pair(
@@ -165,7 +319,11 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
       );
       final credRepo = ref.read(assistantCredentialRepositoryProvider);
       await credRepo.saveCredential(credential);
-      state = state.copyWith(credential: credential);
+      if (!ref.mounted) return null;
+      state = state.copyWith(
+        credential: credential,
+        backendStatus: AssistantBackendStatus.notChecked,
+      );
       return null; // success
     } on AssistantAuthException catch (e) {
       return e.message;
@@ -177,11 +335,14 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   }
 
   Future<void> unpair() async {
+    _credentialGeneration++;
+    _backendConnectionFuture = null;
     final repo = ref.read(assistantCredentialRepositoryProvider);
     await repo.deleteCredential();
+    if (!ref.mounted) return;
     state = const AssistantControllerState(
       sessionState: AssistantSessionState.idle,
-    );
+    ).copyWith(geminiConfiguration: state.geminiConfiguration);
   }
 
   // ---------------------------------------------------------------------------
@@ -227,6 +388,7 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
 
     _sessionInProgress = true;
     try {
+      await loadGeminiConfiguration();
       if (ref.read(visionVoiceKernelProvider).isHandsFreeActive) {
         await ref.read(visionVoiceKernelProvider.notifier).stopHandsFree();
       }
@@ -273,20 +435,33 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
       }
 
       // 3. Don't listen while TTS is speaking.
-      if (_speechActive) {
+      if (_speechActive || _speechOutput.isSpeaking) {
         await _speechOutput.stop();
         _speechActive = false;
         await Future<void>.delayed(const Duration(milliseconds: 250));
       }
 
-      // 4. Start bounded on-device recognition.
+      // 4. Start bounded on-device recognition or audio recording.
       try {
-        await _speechRecognizer.startListening(
-          locale: WidgetsBinding.instance.platformDispatcher.locale
-              .toLanguageTag(),
-        );
+        final useAudioUpload =
+            appRouteObserver.currentRoute == RoutePaths.assistant &&
+            !state.usesDirectGemini &&
+            (state.credential?.isValid ?? false);
+        _manualUsesLaptop = useAudioUpload;
+
+        if (useAudioUpload) {
+          await _audioRecorder.startRecording();
+        } else {
+          await _speechRecognizer.startListening(
+            locale: WidgetsBinding.instance.platformDispatcher.locale
+                .toLanguageTag(),
+          );
+        }
       } on OnDeviceSpeechRecognitionException catch (error) {
         _handleSpeechRecognitionFailure(error);
+        return;
+      } on AudioRecorderException catch (error) {
+        _fail(AssistantFailureKind.unexpected, 'Microphone failure: $error');
         return;
       }
 
@@ -311,23 +486,45 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
 
     _transitionTo(AssistantSessionState.processingAudio);
     try {
-      OnDeviceSpeechResult speechResult;
-      try {
-        speechResult = await _speechRecognizer.stopListening();
-      } on OnDeviceSpeechRecognitionException catch (error) {
-        _handleSpeechRecognitionFailure(error);
-        return;
-      }
+      final useAudioUpload = _manualUsesLaptop;
 
-      if (speechResult.transcript.trim().isEmpty) {
-        _fail(
-          AssistantFailureKind.emptyAudio,
-          AssistantFailureKind.emptyAudio.recoveryHint,
-        );
-        return;
-      }
+      if (useAudioUpload) {
+        String? audioPath;
+        try {
+          audioPath = await _audioRecorder.stopRecording();
+        } on AudioRecorderException catch (error) {
+          _fail(AssistantFailureKind.unexpected, 'Microphone failure: $error');
+          return;
+        }
 
-      await _submitRecognizedTranscript(speechResult.transcript);
+        if (audioPath == null || audioPath.isEmpty) {
+          _fail(
+            AssistantFailureKind.emptyAudio,
+            AssistantFailureKind.emptyAudio.recoveryHint,
+          );
+          return;
+        }
+
+        await _submitRecordedAudio(audioPath);
+      } else {
+        OnDeviceSpeechResult speechResult;
+        try {
+          speechResult = await _speechRecognizer.stopListening();
+        } on OnDeviceSpeechRecognitionException catch (error) {
+          _handleSpeechRecognitionFailure(error);
+          return;
+        }
+
+        if (speechResult.transcript.trim().isEmpty) {
+          _fail(
+            AssistantFailureKind.emptyAudio,
+            AssistantFailureKind.emptyAudio.recoveryHint,
+          );
+          return;
+        }
+
+        await _submitRecognizedTranscript(speechResult.transcript);
+      }
     } finally {
       _sessionInProgress = false;
       if (!ref.read(visionVoiceKernelProvider).isHandsFreeActive) {
@@ -343,6 +540,7 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   Future<void> cancelListening() async {
     if (state.sessionState != AssistantSessionState.listening) return;
     try {
+      await _audioRecorder.cancelRecording();
       await _speechRecognizer.cancelListening();
     } finally {
       _transitionTo(AssistantSessionState.cancelled);
@@ -430,6 +628,12 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   }
 
   Future<void> _sendConversationToBackend(String query) async {
+    await loadGeminiConfiguration();
+    if (!ref.mounted) return;
+    if (state.usesDirectGemini) {
+      await _sendDirectGemini(query);
+      return;
+    }
     _transitionTo(AssistantSessionState.checkingConnection);
     final credential = state.credential;
     if (credential == null || !credential.isValid) {
@@ -457,6 +661,46 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
       conversationHistory: state.conversationHistory,
     );
     await _handleResponse(response, credential);
+  }
+
+  Future<void> _sendDirectGemini(
+    String query, {
+    bool alreadyAdded = false,
+  }) async {
+    final configuration = state.geminiConfiguration!;
+    final generation = ++_directQueryGeneration;
+    final history = List<AssistantMessage>.of(state.conversationHistory);
+    if (alreadyAdded && history.isNotEmpty && history.last.isUser) {
+      history.removeLast();
+    }
+    if (!alreadyAdded) _addUserMessage(query);
+    state = state.copyWith(lastTranscript: query);
+    _transitionTo(AssistantSessionState.thinking);
+    try {
+      final text = await ref
+          .read(geminiConversationServiceProvider)
+          .reply(configuration: configuration, query: query, history: history);
+      if (!ref.mounted || generation != _directQueryGeneration) return;
+      // Cloud output is always plain conversation; never parse it as a tool.
+      await _handleResponse(
+        AssistantResponse(
+          responseText: text,
+          requestId: 'gemini-${DateTime.now().microsecondsSinceEpoch}',
+        ),
+        null,
+      );
+    } on GeminiConversationException catch (error) {
+      if (ref.mounted && generation == _directQueryGeneration) {
+        _fail(AssistantFailureKind.unexpected, error.message);
+      }
+    } catch (_) {
+      if (ref.mounted && generation == _directQueryGeneration) {
+        _fail(
+          AssistantFailureKind.unexpected,
+          'Gemini is unavailable. Please try again.',
+        );
+      }
+    }
   }
 
   /// Confirm a pending tool action.
@@ -500,8 +744,30 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
     if (state.sessionState != AssistantSessionState.awaitingConfirmation) {
       return;
     }
+    final response = state.pendingResponse;
+    final credential = state.credential;
     _transitionTo(AssistantSessionState.cancelled);
     _sessionInProgress = false;
+    if (response?.toolCall != null &&
+        credential != null &&
+        !response!.requestId.startsWith('offline-')) {
+      try {
+        await ref
+            .read(assistantRepositoryProvider)
+            .reportToolResult(
+              credential: credential,
+              requestId: response.requestId,
+              result: AssistantToolResult.error(
+                response.toolCall!.name,
+                'Cancelled',
+              ),
+              conversationHistory: state.conversationHistory,
+            );
+      } catch (_) {
+        // No local action executes on cancellation. A new query invalidates
+        // any pending server proposal when connectivity returns.
+      }
+    }
   }
 
   /// Repeat the last spoken response.
@@ -556,6 +822,7 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
 
   /// Load conversation history from the backend.
   Future<void> loadHistory() async {
+    if (state.usesDirectGemini) return;
     final credential = state.credential;
     if (credential == null) return;
     try {
@@ -568,7 +835,7 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   /// Clear conversation history.
   Future<void> clearHistory() async {
     final credential = state.credential;
-    if (credential != null) {
+    if (credential != null && !state.usesDirectGemini) {
       try {
         final assistantRepo = ref.read(assistantRepositoryProvider);
         await assistantRepo.clearConversationHistory(credential);
@@ -580,6 +847,74 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   // ---------------------------------------------------------------------------
   // Internal helpers
   // ---------------------------------------------------------------------------
+
+  Future<void> _submitRecordedAudio(String audioPath) async {
+    try {
+      _transitionTo(AssistantSessionState.thinking);
+
+      final credential = state.credential;
+      if (credential == null || !credential.isValid) {
+        _fail(
+          AssistantFailureKind.backendUnreachable,
+          'No assistant backend is paired.',
+        );
+        return;
+      }
+
+      final assistantRepo = ref.read(assistantRepositoryProvider);
+      final response = await assistantRepo.sendAudioQuery(
+        credential: credential,
+        audioFilePath: audioPath,
+        conversationHistory: state.conversationHistory,
+      );
+
+      final userText = response.userTranscript;
+      if (userText != null && userText.isNotEmpty) {
+        _addUserMessage(userText);
+        state = state.copyWith(lastTranscript: userText);
+      } else {
+        // Fallback placeholder if backend fails to return transcript
+        _addUserMessage("Voice note");
+      }
+
+      await _handleResponse(response, credential);
+    } catch (e) {
+      if (e is AssistantAuthException) {
+        _fail(
+          AssistantFailureKind.authenticationFailed,
+          AssistantFailureKind.authenticationFailed.recoveryHint,
+        );
+      } else if (e is AssistantNetworkException) {
+        if (e.statusCode == 422) {
+          _fail(
+            AssistantFailureKind.transcriptionFailed,
+            'I could not hear that clearly. Please repeat your full question '
+            'or use text input.',
+          );
+        } else if (e.statusCode == 413) {
+          _fail(
+            AssistantFailureKind.audioTooLarge,
+            AssistantFailureKind.audioTooLarge.recoveryHint,
+          );
+        } else {
+          _transitionTo(AssistantSessionState.laptopUnavailable);
+        }
+      } else {
+        _fail(AssistantFailureKind.unexpected, 'Unexpected error: $e');
+      }
+    } finally {
+      // The repository has consumed the recording before its future completes.
+      try {
+        final file = File(audioPath);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+      if (state.sessionState.isTerminal ||
+          state.sessionState == AssistantSessionState.idle ||
+          state.sessionState == AssistantSessionState.completed) {
+        _sessionInProgress = false;
+      }
+    }
+  }
 
   Future<void> _submitRecognizedTranscript(String rawTranscript) async {
     final transcript = rawTranscript.trim();
@@ -612,7 +947,14 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
         return;
       }
 
-      // ONLY on the Smart AI screen: route questions to the paired laptop backend (Gemini/Ollama)
+      await loadGeminiConfiguration();
+      if (!ref.mounted) return;
+      if (state.usesDirectGemini) {
+        await _sendDirectGemini(transcript, alreadyAdded: true);
+        return;
+      }
+
+      // Only Smart AI sends unmatched conversation to the selected provider.
       final credential = state.credential;
       if (credential == null || !credential.isValid) {
         await _handleResponse(
@@ -763,7 +1105,9 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
       );
     } catch (_) {
       return AssistantResponse(
-        responseText: _formatLocalToolResult(result),
+        responseText: _serverConfirmationTools.contains(result.toolName)
+            ? 'The laptop did not confirm the action. Check its state before trying again.'
+            : _formatLocalToolResult(result),
         requestId: response.requestId,
       );
     }
@@ -847,12 +1191,10 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
         'Opening document scanner. Point your camera at the document and say scan.',
       'trigger_ocr_scan' => '',
       'ocr_read_again' => 'Reading document again.',
-      'ocr_rescan' =>
-        'Ready to scan again. Point your camera at the document and say scan.',
+      'ocr_rescan' => 'Scanning a new page.',
       'stop_speaking' => 'Speech stopped.',
       'dismiss_assistant' => 'Goodbye.',
-      'get_battery_status' =>
-        'Battery level is at ${data['level'] ?? 85} percent.',
+      'get_battery_status' => 'Battery level is at ${data['level']} percent.',
       'set_flashlight_enabled' =>
         'Flashlight turned ${data['enabled'] == true ? 'on' : 'off'}.',
       'set_speech_rate' => 'Speech rate set to ${data['rate'] ?? 'normal'}.',
@@ -895,6 +1237,11 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   ) async {
     // Mobile-side tool execution — reads real app state
     try {
+      if (_serverConfirmationTools.contains(toolCall.name)) {
+        // This acknowledges the user's Confirm gesture only. The backend
+        // executes its stored proposal, bound to the authenticated request ID.
+        return AssistantToolResult.ok(toolCall.name);
+      }
       return switch (toolCall.name) {
         'get_current_time' => AssistantToolResult.ok(
           toolCall.name,
@@ -940,7 +1287,7 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
         'ocr_copy_text' => _ocrCopyText(toolCall.name),
         'stop_speaking' => await _stopSpeakingTool(toolCall.name),
         'dismiss_assistant' => _dismissAssistant(toolCall.name),
-        'get_battery_status' => _getBatteryStatus(toolCall.name),
+        'get_battery_status' => await _getBatteryStatus(toolCall.name),
         'reading_pause' => _readingPause(toolCall.name),
         'reading_resume' => _readingResume(toolCall.name),
         'reading_previous' => _readingPrevious(toolCall.name),
@@ -952,7 +1299,7 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
         'set_environment_mode' => _setEnvironmentMode(toolCall),
         'set_flashlight_enabled' ||
         'set_torch' => await _setFlashlightEnabled(toolCall),
-        'set_speech_rate' => _setSpeechRate(toolCall),
+        'set_speech_rate' => await _setSpeechRate(toolCall),
         'stop_everything' => await _stopEverything(toolCall.name),
         // Notes, reminders, schedule, preferences, memory are handled
         // on the backend — if the backend sends these as mobile tools,
@@ -966,6 +1313,25 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
       return AssistantToolResult.error(toolCall.name, 'Tool error: $e');
     }
   }
+
+  static const _serverConfirmationTools = {
+    'save_note',
+    'list_notes',
+    'read_note',
+    'delete_note',
+    'create_reminder',
+    'list_reminders',
+    'complete_reminder',
+    'delete_reminder',
+    'create_schedule_entry',
+    'list_schedule',
+    'update_schedule_entry',
+    'delete_schedule_entry',
+    'save_preference',
+    'recall_preference',
+    'forget_memory',
+    'provide_daily_summary',
+  };
 
   AssistantToolResult _getMobileModeStatus(String toolName) {
     final assistance = ref.read(assistanceControllerProvider);
@@ -1413,7 +1779,9 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   }
 
   AssistantToolResult _ocrRescan(String toolName) {
-    ref.read(ocrActionTriggerProvider.notifier).trigger(OcrActionTrigger.reset);
+    ref
+        .read(ocrActionTriggerProvider.notifier)
+        .trigger(OcrActionTrigger.capture);
     return AssistantToolResult.ok(toolName, data: {'action': 'rescan'});
   }
 
@@ -1534,24 +1902,35 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
     );
   }
 
-  AssistantToolResult _getBatteryStatus(String toolName) {
-    return AssistantToolResult.ok(
-      toolName,
-      data: {'level': 85, 'charging': false, 'status': 'discharging'},
-    );
+  Future<AssistantToolResult> _getBatteryStatus(String toolName) async {
+    final percentage = await ref
+        .read(batteryStatusServiceProvider)
+        .readPercentage();
+    if (percentage == null) {
+      return AssistantToolResult.error(
+        toolName,
+        'Battery status is unavailable.',
+      );
+    }
+    return AssistantToolResult.ok(toolName, data: {'level': percentage});
   }
 
   Future<AssistantToolResult> _setFlashlightEnabled(
     AssistantToolCall toolCall,
   ) async {
     final enabled = toolCall.arguments['enabled'] == true;
-    try {
-      await ref.read(cameraServiceProvider).setTorch(enabled);
-    } catch (_) {}
+    final camera = ref.read(cameraServiceProvider);
+    await camera.setTorch(enabled);
+    if (camera.isTorchOn != enabled) {
+      return AssistantToolResult.error(
+        toolCall.name,
+        'Flashlight is unavailable. Start the camera and try again.',
+      );
+    }
     return AssistantToolResult.ok(toolCall.name, data: {'enabled': enabled});
   }
 
-  AssistantToolResult _setSpeechRate(AssistantToolCall toolCall) {
+  Future<AssistantToolResult> _setSpeechRate(AssistantToolCall toolCall) async {
     final rate =
         toolCall.arguments['rate']?.toString().toLowerCase() ?? 'normal';
     final double speechRate = switch (rate) {
@@ -1559,6 +1938,13 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
       'slow' => 0.35,
       _ => 0.5,
     };
+    if (!{'fast', 'slow', 'normal'}.contains(rate)) {
+      return AssistantToolResult.error(
+        toolCall.name,
+        'Speech rate must be slow, normal, or fast.',
+      );
+    }
+    await _speechOutput.setSpeechRate(speechRate);
     return AssistantToolResult.ok(
       toolCall.name,
       data: {'rate': rate, 'speed': speechRate},
@@ -1674,6 +2060,14 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
+        if (state.usesDirectGemini) {
+          _directQueryGeneration++;
+          ref.read(geminiConversationServiceProvider).cancelPending();
+          if (state.sessionState == AssistantSessionState.thinking) {
+            _sessionInProgress = false;
+            _transitionTo(AssistantSessionState.cancelled);
+          }
+        }
         _stopListeningIfActive();
         unawaited(_speechOutput.stop());
         _speechActive = false;
@@ -1686,7 +2080,9 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   void _stopListeningIfActive() {
     if (state.sessionState == AssistantSessionState.listening) {
       unawaited(() async {
+        await _audioRecorder.cancelRecording();
         await _speechRecognizer.cancelListening();
+        if (!ref.mounted) return;
         _transitionTo(AssistantSessionState.cancelled);
         _sessionInProgress = false;
       }());
@@ -1694,11 +2090,13 @@ class AssistantSessionController extends Notifier<AssistantControllerState> {
   }
 
   void _cleanup() {
+    _directQueryGeneration++;
     if (_lifecycleObserver != null) {
       WidgetsBinding.instance.removeObserver(_lifecycleObserver!);
       _lifecycleObserver = null;
     }
     unawaited(_speechOutput.stop());
+    unawaited(_audioRecorder.cancelRecording());
     unawaited(_speechRecognizer.cancelListening());
   }
 }

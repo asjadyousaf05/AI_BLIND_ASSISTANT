@@ -49,8 +49,14 @@ class MdnsAdvertiser:
             },
             server=f"{instance}.local.",
         )
-        self._zeroconf = AsyncZeroconf(ip_version=IPVersion.V4Only)
-        await self._zeroconf.async_register_service(self._info)
+        # Advertise only on the private interface that owns this socket, even
+        # when Ethernet, VPN or another Wi-Fi route is also present.
+        self._zeroconf = AsyncZeroconf(interfaces=[self.host], ip_version=IPVersion.V4Only)
+        try:
+            await self._zeroconf.async_register_service(self._info, allow_name_change=True)
+        except BaseException:
+            await self.close()
+            raise
         LOGGER.info("advertising %s on %s:%s", SERVICE_TYPE, self.host, self.port)
 
     async def close(self) -> None:

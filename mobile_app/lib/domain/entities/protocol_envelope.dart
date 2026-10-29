@@ -9,6 +9,7 @@ class ProtocolEnvelope {
     required this.sequence,
     required this.payload,
     this.authenticationTag,
+    this.encodedTimestamp,
   });
 
   static const int currentVersion = 1;
@@ -18,6 +19,11 @@ class ProtocolEnvelope {
   final ProtocolMessageType type;
   final String messageId;
   final DateTime timestamp;
+
+  /// Preserve the peer's exact signed text, including trailing fractional zeros.
+  final String? encodedTimestamp;
+  String get timestampText =>
+      encodedTimestamp ?? timestamp.toUtc().toIso8601String();
   final int sequence;
   final Map<String, Object?> payload;
   final String? authenticationTag;
@@ -26,7 +32,7 @@ class ProtocolEnvelope {
     'protocolVersion': protocolVersion,
     'type': type.wireName,
     'messageId': messageId,
-    'timestamp': timestamp.toUtc().toIso8601String(),
+    'timestamp': timestampText,
     'sequence': sequence,
     'payload': payload,
     if (authenticationTag != null) 'authenticationTag': authenticationTag,
@@ -38,6 +44,7 @@ class ProtocolEnvelope {
       type: type,
       messageId: messageId,
       timestamp: timestamp,
+      encodedTimestamp: encodedTimestamp,
       sequence: sequence,
       payload: payload,
       authenticationTag: authenticationTag,

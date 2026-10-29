@@ -46,6 +46,8 @@ def create_app(
         migrate(conn)
         app.state.db = conn
         app.state.settings = settings
+        # One pending proposal per authenticated user; never persist tool arguments.
+        app.state.pending_server_tools = {}
 
         # AI provider
         if use_simulated_ai:

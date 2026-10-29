@@ -7,6 +7,27 @@ import org.junit.Test
 
 class VisionAiWakePhraseTest {
     @Test
+    fun listenWakeAndPoliteNavigationAreAvailableInFocusedGraphs() {
+        assertNotNull(VisionAiWakePhrase.match("listen vision ai"))
+        assertEquals("can you please go back", VisionAiWakePhrase.match(
+            "listen vision ai can you please go back",
+        )?.command)
+        assertNull(VisionAiWakePhrase.match("listen to music"))
+        assertNull(VisionAiWakePhrase.match("I said listen vision ai"))
+        assertEquals(true, "listen vision ai" in VisionAiSpeechGrammar.wakePhrases)
+        for (commands in listOf(
+            VisionAiSpeechGrammar.appCommandPhrases,
+            VisionAiSpeechGrammar.scannerCommandPhrases,
+        )) {
+            for (phrase in listOf(
+                "can you please go back", "go home", "open about page",
+                "could you please open setting", "open settings page",
+            )) assertEquals("Missing: $phrase", true, phrase in commands)
+            assertEquals(false, "can you please [unk]" in commands)
+        }
+    }
+
+    @Test
     fun keepsVoskTranscriptInTopLevelTextField() {
         assertEquals(0, VisionAiVoskContract.maxAlternatives)
     }
@@ -79,7 +100,7 @@ class VisionAiWakePhraseTest {
         assertEquals(true, "start smart ai" in commands)
         assertEquals(true, "set speech rate to fast" in commands)
         assertEquals(true, "set announcement cooldown to 5 seconds" in commands)
-        assertEquals(true, "bye" in commands)
+        assertEquals(true, "stop listening" in commands)
         assertEquals(true, "[unk]" in commands)
     }
 
@@ -88,6 +109,9 @@ class VisionAiWakePhraseTest {
         val commands = VisionAiSpeechGrammar.scannerCommandPhrases
 
         assertEquals(true, "scan this page" in commands)
+        assertEquals(true, "restart scanner" in commands)
+        assertEquals(true, "please restart scanner" in commands)
+        assertEquals(true, "scan again" in commands)
         assertEquals(true, "could you take a picture" in commands)
         assertEquals(true, "pause the reading" in commands)
         assertEquals(true, "please continue reading" in commands)
@@ -107,5 +131,20 @@ class VisionAiWakePhraseTest {
         assertEquals(true, "turn flashlight on" in commands)
         assertEquals(true, "good bye" in commands)
         assertEquals(true, "[unk]" in commands)
+    }
+
+    @Test
+    fun focusedGrammarsDoNotOfferBareByeHomophones() {
+        for (commands in listOf(
+            VisionAiSpeechGrammar.appCommandPhrases,
+            VisionAiSpeechGrammar.scannerCommandPhrases,
+        )) {
+            assertEquals(false, "bye" in commands)
+            assertEquals(false, "by" in commands)
+            assertEquals(false, "buy" in commands)
+            assertEquals(true, "goodbye" in commands)
+            assertEquals(true, "end voice session" in commands)
+            assertEquals(true, "exit smart ai" in commands)
+        }
     }
 }

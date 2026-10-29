@@ -12,7 +12,7 @@ internal object VisionAiWakePhrase {
     private val whitespace = Regex("\\s+")
     private val word = Regex("[a-z0-9]+")
     private val aiSpellings = setOf("ai", "aye", "eye", "i", "a", "eh")
-    private val wakeLeads = setOf("hey", "hi", "hello", "hay")
+    private val wakeLeads = setOf("hey", "hi", "hello", "hay", "listen")
     private val visionSpellings = setOf("vision", "visual", "version")
 
     fun match(rawTranscript: String): VisionAiWakeMatch? {

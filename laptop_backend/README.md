@@ -4,7 +4,15 @@ This paired FastAPI service provides local speech transcription, deterministic
 app-control routing, and conversational AI for the Flutter application.
 
 - Common controls are matched locally and validated against a strict tool list.
-- Voice is transcribed locally with faster-whisper base.
+- Laptop voice uploads use faster-whisper medium for question/name accuracy.
+  Prepare it with `.venv/bin/python scripts/prepare_whisper_model.py --model medium`.
+  Existing installations must also set `WHISPER_MODEL=medium` in their ignored
+  `.env` and restart the backend. Smaller models remain an explicit speed/RAM
+  tradeoff. Models load from the local cache without runtime downloads.
+- `WHISPER_LANGUAGE` is honored (`en` by default, or `auto` for detection).
+  Unclear or repetitive decoding asks for a retry before command routing.
+- Phone hands-free speech still uses bundled English Vosk, independently of
+  Whisper. A laptop model upgrade does not improve that recognizer's vocabulary.
 - Gemini is preferred only when `GOOGLE_API_KEY` or `GEMINI_API_KEY` exists.
 - Any Gemini failure automatically falls back to local Ollama `llama3.2:3b`.
 - Camera frames and raw recordings are never sent to Gemini.

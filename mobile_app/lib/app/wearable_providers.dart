@@ -46,6 +46,10 @@ final wearableClientIdProvider = FutureProvider<String>((ref) {
 final wearablePhoneFeedbackServiceProvider =
     Provider<WearablePhoneFeedbackService>((ref) {
       return VoiceKernelWearablePhoneFeedbackService(
-        speak: ref.read(visionVoiceKernelProvider.notifier).speakFeedback,
+        stopSpeaking: () =>
+            ref.read(visionVoiceKernelProvider.notifier).stopSpeaking(),
+        speak: (text) => ref
+            .read(visionVoiceKernelProvider.notifier)
+            .speakFeedback(text, reportFailure: true),
       );
     });

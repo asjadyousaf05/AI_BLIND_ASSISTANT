@@ -62,6 +62,13 @@ class OnDeviceSpeechRecognizerHandler(
     private var awaitingHandsFreeCommand = false
     private var handsFreeWakeTimeout: Runnable? = null
     private var lastHandledHandsFreeTranscript: String? = null
+    private var smartAiControlsActive = false
+    private var lastSmartAiGoodbyeAt = 0L
+    private var readerPlaybackActive = false
+    private val readerBargeInGate = ReaderBargeInGate()
+    private val listeningCue = VisionAiListeningCue(context)
+    private var foreground = false
+    private var handsFreePaused = false
 
     private var wakeLock: android.os.PowerManager.WakeLock? = null
 
@@ -80,7 +87,15 @@ class OnDeviceSpeechRecognizerHandler(
                 result.success(null)
             }
             "resumeHandsFree" -> {
-                resumeHandsFree(call.argument<Boolean>("acceptNextCommand") == true)
+                if (resumeHandsFree(call.argument<Boolean>("acceptNextCommand") == true)) {
+                    result.success(true)
+                } else {
+                    result.error("resume_failed", "The offline microphone did not resume.", null)
+                }
+            }
+            "playListeningReadyCue" -> {
+                if (foreground && sessionMode == SessionMode.HANDS_FREE &&
+                    awaitingHandsFreeCommand && !handsFreePaused) listeningCue.play()
                 result.success(null)
             }
             "stopHandsFree" -> {
@@ -92,11 +107,45 @@ class OnDeviceSpeechRecognizerHandler(
                 setRecognitionProfile(profile)
                 result.success(true)
             }
+            "setSmartAiControlsActive" -> {
+                val active = call.argument<Boolean>("active") == true
+                if (active != smartAiControlsActive) {
+                    smartAiControlsActive = active
+                    val profile = activeDecoderProfile
+                    if (sessionMode == SessionMode.HANDS_FREE && profile != null &&
+                        profile != VisionAiDecoderProfile.CONVERSATION &&
+                        !switchHandsFreeDecoder(profile)) {
+                        result.error("smart_ai_controls", "Local controls could not restart.", null)
+                        return
+                    }
+                }
+                result.success(null)
+            }
+            "setReaderPlaybackActive" -> {
+                readerPlaybackActive = call.argument<Boolean>("active") == true
+                readerBargeInGate.reset()
+                result.success(null)
+            }
+            "acceptReaderCommandCandidate" -> {
+                val id = call.argument<String>("candidateId")
+                val transcript = if (id != null && readerPlaybackActive &&
+                    sessionMode == SessionMode.HANDS_FREE && awaitingHandsFreeCommand &&
+                    activeDecoderProfile == VisionAiDecoderProfile.SCANNER_COMMANDS
+                ) readerBargeInGate.consume(id, android.os.SystemClock.elapsedRealtime()) else null
+                if (transcript != null) {
+                    cancelHandsFreeWakeTimeout()
+                    awaitingHandsFreeCommand = false
+                    lastHandledHandsFreeTranscript = transcript
+                    pauseHandsFree()
+                }
+                result.success(transcript != null)
+            }
             else -> result.notImplemented()
         }
     }
 
     fun dispose() {
+        listeningCue.cancel()
         disposed = true
         modelLoadGeneration += 1
         pendingStartResult?.error(
@@ -125,6 +174,11 @@ class OnDeviceSpeechRecognizerHandler(
             // Model is already being released.
         }
         voskModel = null
+    }
+
+    fun setForeground(active: Boolean) {
+        foreground = active
+        if (!active) pauseHandsFree()
     }
 
     private fun availabilityPayload(): Map<String, Any?> {
@@ -293,7 +347,9 @@ class OnDeviceSpeechRecognizerHandler(
             voskSpeechService = createdService
             activeProvider = RecognitionProvider.VOSK
             sessionMode = requestedMode
+            handsFreePaused = false
             activeDecoderProfile = initialProfile
+            attachAudioEffects(createdService)
             val started = if (requestedMode == SessionMode.HANDS_FREE) {
                 try {
                     val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
@@ -311,7 +367,6 @@ class OnDeviceSpeechRecognizerHandler(
             if (!started) {
                 throw IllegalStateException("Vosk recognition thread did not start.")
             }
-            attachAudioEffects(createdService)
             result.success(true)
         } catch (error: Exception) {
             destroyVoskSession(cancel = true)
@@ -338,7 +393,7 @@ class OnDeviceSpeechRecognizerHandler(
         val createdRecognizer = if (profile == VisionAiDecoderProfile.CONVERSATION) {
             Recognizer(model, VOSK_SAMPLE_RATE)
         } else {
-            Recognizer(model, VOSK_SAMPLE_RATE, VisionAiSpeechGrammar.jsonFor(profile))
+            Recognizer(model, VOSK_SAMPLE_RATE, SmartAiControlGrammar.extend(VisionAiSpeechGrammar.jsonFor(profile), smartAiControlsActive))
         }
         createdRecognizer.setMaxAlternatives(VisionAiVoskContract.maxAlternatives)
         createdRecognizer.setWords(profile != VisionAiDecoderProfile.WAKE)
@@ -356,9 +411,11 @@ class OnDeviceSpeechRecognizerHandler(
                 recognizer.setEndpointerDelays(8.0f, 0.55f, 10.0f)
             VisionAiDecoderProfile.APP_COMMANDS,
             VisionAiDecoderProfile.SCANNER_COMMANDS,
-            -> recognizer.setEndpointerDelays(5.0f, 0.7f, 15.0f)
+            -> recognizer.setEndpointerDelays(5.0f, 1.0f, 15.0f)
             VisionAiDecoderProfile.CONVERSATION ->
-                recognizer.setEndpointerDelays(5.0f, 0.85f, 20.0f)
+                // General questions need time for natural pauses and names.
+                // Keep the faster app/scanner command endpoints unchanged.
+                recognizer.setEndpointerDelays(8.0f, 1.6f, 30.0f)
         }
     }
 
@@ -406,8 +463,8 @@ class OnDeviceSpeechRecognizerHandler(
             return
         }
         if (sessionMode == SessionMode.HANDS_FREE && voskSpeechService != null) {
-            resumeHandsFree()
-            result.success(true)
+            if (resumeHandsFree()) result.success(true)
+            else result.error("resume_failed", "The offline microphone did not resume.", null)
             return
         }
         if (isBusy()) {
@@ -437,6 +494,9 @@ class OnDeviceSpeechRecognizerHandler(
     }
 
     private fun pauseHandsFree() {
+        listeningCue.cancel()
+        handsFreePaused = true
+        readerBargeInGate.reset()
         if (sessionMode == SessionMode.HANDS_FREE) {
             try {
                 voskSpeechService?.setPause(true)
@@ -444,8 +504,10 @@ class OnDeviceSpeechRecognizerHandler(
         }
     }
 
-    private fun resumeHandsFree(acceptNextCommand: Boolean = false) {
-        if (sessionMode == SessionMode.HANDS_FREE) {
+    private fun resumeHandsFree(acceptNextCommand: Boolean = false): Boolean {
+        readerBargeInGate.reset()
+        if (sessionMode == SessionMode.HANDS_FREE && voskSpeechService != null) {
+            handsFreePaused = false
             awaitingHandsFreeCommand = acceptNextCommand
             lastHandledHandsFreeTranscript = null
             val targetProfile = if (acceptNextCommand) {
@@ -463,19 +525,24 @@ class OnDeviceSpeechRecognizerHandler(
                 // SpeechService.reset() is thread-safe: it asks its audio
                 // thread to reset between buffers. Calling Recognizer.reset()
                 // directly here can race native decoding and crash the process.
-                voskSpeechService?.reset()
-                voskSpeechService?.setPause(false)
+                try {
+                    voskSpeechService?.reset()
+                    voskSpeechService?.setPause(false)
+                } catch (_: Exception) {
+                    destroyActiveSession(cancel = true)
+                    return false
+                }
             } else if (!switchHandsFreeDecoder(targetProfile)) {
                 awaitingHandsFreeCommand = false
-                channel.invokeMethod(
-                    "onHandsFreeError",
-                    mapOf("errorType" to "decoder_switch_failed"),
-                )
+                return false
             }
+            return true
         }
+        return false
     }
 
     private fun setRecognitionProfile(profile: String) {
+        readerBargeInGate.reset()
         val nextProfile = when (profile) {
             "conversation" -> VisionAiDecoderProfile.CONVERSATION
             "scanner_commands", "barge_in" -> VisionAiDecoderProfile.SCANNER_COMMANDS
@@ -512,7 +579,7 @@ class OnDeviceSpeechRecognizerHandler(
         return try {
             service.cancel()
             recognizer.reset()
-            recognizer.setGrammar(VisionAiSpeechGrammar.jsonFor(targetProfile))
+            recognizer.setGrammar(SmartAiControlGrammar.extend(VisionAiSpeechGrammar.jsonFor(targetProfile), smartAiControlsActive))
             recognizer.setWords(targetProfile != VisionAiDecoderProfile.WAKE)
             configureEndpointer(recognizer, targetProfile)
             voskPartialTranscript = ""
@@ -520,6 +587,7 @@ class OnDeviceSpeechRecognizerHandler(
             if (!service.startListening(this)) {
                 throw IllegalStateException("Vosk decoder thread did not restart.")
             }
+            service.setPause(handsFreePaused)
             true
         } catch (error: Exception) {
             android.util.Log.w(
@@ -532,6 +600,7 @@ class OnDeviceSpeechRecognizerHandler(
     }
 
     private fun stopHandsFree() {
+        listeningCue.cancel()
         if (sessionMode != SessionMode.HANDS_FREE && pendingSessionMode != SessionMode.HANDS_FREE) {
             return
         }
@@ -722,6 +791,7 @@ class OnDeviceSpeechRecognizerHandler(
     }
 
     private fun destroyActiveSession(cancel: Boolean = false) {
+        readerBargeInGate.reset()
         when (activeProvider) {
             RecognitionProvider.ANDROID -> {
                 if (cancel) {
@@ -861,10 +931,25 @@ class OnDeviceSpeechRecognizerHandler(
     override fun onPartialResult(hypothesis: String) {
         if (activeProvider != RecognitionProvider.VOSK) return
         voskPartialTranscript = transcriptFromJson(hypothesis, "partial")
+        if (readerPlaybackActive && sessionMode == SessionMode.HANDS_FREE &&
+            awaitingHandsFreeCommand &&
+            activeDecoderProfile == VisionAiDecoderProfile.SCANNER_COMMANDS
+        ) {
+            readerBargeInGate.observe(
+                voskPartialTranscript,
+                android.os.SystemClock.elapsedRealtime(),
+            )?.let { candidate ->
+                channel.invokeMethod(
+                    "onReaderCommandCandidate",
+                    mapOf("candidateId" to candidate.id, "transcript" to candidate.transcript),
+                )
+            }
+        }
     }
 
     override fun onResult(hypothesis: String) {
         if (activeProvider != RecognitionProvider.VOSK) return
+        readerBargeInGate.reset()
         val transcript = transcriptFromJson(hypothesis, "text")
         if (sessionMode == SessionMode.HANDS_FREE) {
             handleHandsFreeTranscript(transcript)
@@ -875,6 +960,7 @@ class OnDeviceSpeechRecognizerHandler(
     }
 
     override fun onFinalResult(hypothesis: String) {
+        readerBargeInGate.reset()
         if (activeProvider == RecognitionProvider.VOSK) {
             if (sessionMode == SessionMode.HANDS_FREE) {
                 handleHandsFreeTranscript(transcriptFromJson(hypothesis, "text"))
@@ -918,6 +1004,16 @@ class OnDeviceSpeechRecognizerHandler(
         val normalized = transcript.lowercase(Locale.US).replace(WHITESPACE_REGEX, " ")
         if (normalized.isEmpty() || normalized == "[unk]" || normalized == "unk") return
         if (normalized == lastHandledHandsFreeTranscript) return
+
+        if (smartAiControlsActive && SmartAiControlGrammar.isGoodbye(normalized)) {
+            cancelHandsFreeWakeTimeout()
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now - lastSmartAiGoodbyeAt >= 750L) {
+                lastSmartAiGoodbyeAt = now
+                channel.invokeMethod("onSmartAiGoodbye", null)
+            }
+            return
+        }
 
         if (awaitingHandsFreeCommand) {
             // Vosk can deliver the same utterance in both onResult and

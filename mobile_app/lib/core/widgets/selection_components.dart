@@ -41,11 +41,12 @@ class SelectableInfoCard extends StatelessWidget {
       container: true,
       button: true,
       selected: selected,
+      inMutuallyExclusiveGroup: true,
       enabled: active,
-      label:
-          semanticLabel ??
-          '$title, ${selected ? 'selected' : 'not selected'}'
-              '${status == null ? '' : ', $status'}',
+      label: semanticLabel ?? title,
+      hint: description,
+      onTap: active ? onTap : null,
+      excludeSemantics: true,
       child: InkWell(
         onTap: active ? onTap : null,
         borderRadius: BorderRadius.circular(AppRadii.extraLarge),
@@ -125,6 +126,7 @@ class SettingChoiceCard<T> extends StatelessWidget {
     required this.title,
     required this.icon,
     required this.onChanged,
+    this.semanticLabel,
   });
 
   final T value;
@@ -132,6 +134,7 @@ class SettingChoiceCard<T> extends StatelessWidget {
   final String title;
   final IconData icon;
   final ValueChanged<T> onChanged;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -141,7 +144,10 @@ class SettingChoiceCard<T> extends StatelessWidget {
       inMutuallyExclusiveGroup: true,
       selected: selected,
       button: true,
-      label: '$title, ${selected ? 'selected' : 'not selected'}',
+      enabled: true,
+      label: semanticLabel ?? title,
+      onTap: () => onChanged(value),
+      excludeSemantics: true,
       child: InkWell(
         onTap: () => onChanged(value),
         borderRadius: BorderRadius.circular(AppRadii.extraLarge),

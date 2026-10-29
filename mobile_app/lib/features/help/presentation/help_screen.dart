@@ -70,9 +70,12 @@ class _HelpScreenState extends State<HelpScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.space2),
-        Text(
-          'Step ${_stepIndex + 1} of ${_steps.length}',
-          style: Theme.of(context).textTheme.labelLarge,
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            'Step ${_stepIndex + 1} of ${_steps.length}',
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
         ),
         const SizedBox(height: AppSpacing.space5),
         Semantics(
@@ -113,6 +116,7 @@ class _HelpScreenState extends State<HelpScreen> {
               child: SecondaryActionButton(
                 key: AppKeys.helpPreviousButton,
                 label: 'Previous',
+                semanticLabel: 'Previous help step',
                 onPressed: isFirst
                     ? null
                     : () => setState(() {
@@ -125,6 +129,9 @@ class _HelpScreenState extends State<HelpScreen> {
               child: PrimaryActionButton(
                 key: isLast ? AppKeys.helpDoneButton : AppKeys.helpNextButton,
                 label: isLast ? 'Got It' : 'Next',
+                semanticLabel: isLast
+                    ? 'Finish the user guide and return home'
+                    : 'Next help step',
                 icon: isLast ? AppIcons.selected : AppIcons.arrowForward,
                 onPressed: () {
                   if (isLast) {

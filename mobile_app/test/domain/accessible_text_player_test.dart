@@ -9,6 +9,7 @@ class FakeSpeechOutputService implements SpeechOutputService {
   final List<String> spokenTexts = [];
   final List<double> setRates = [];
   int stopCalls = 0;
+  bool failSentence = false;
 
   @override
   Future<void> speak(String text) async {
@@ -26,6 +27,10 @@ class FakeSpeechOutputService implements SpeechOutputService {
   }) async {
     spokenTexts.add(text);
     onStart?.call();
+    if (failSentence) {
+      onError?.call('Speech unavailable');
+      return;
+    }
     onProgress?.call(0, text.length, text);
     onDone?.call();
   }
@@ -109,6 +114,22 @@ void main() {
       expect(speech.spokenTexts, ['Sentence one.', 'Sentence two.']);
       expect(player.status, PlaybackStatus.completed);
     });
+
+    test(
+      'stops reading and exposes an error when speech output fails',
+      () async {
+        speech.failSentence = true;
+        player.load('First line. Second line.');
+        await player.play();
+
+        expect(speech.spokenTexts, ['First line.']);
+        expect(player.status, PlaybackStatus.error);
+
+        speech.failSentence = false;
+        await player.resume();
+        expect(player.status, PlaybackStatus.completed);
+      },
+    );
 
     test('pauses and resumes reading', () async {
       player.load('First line. Second line. Third line.');

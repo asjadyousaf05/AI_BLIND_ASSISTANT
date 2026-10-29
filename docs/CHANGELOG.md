@@ -1,5 +1,438 @@
 # Changelog
 
+## 2026-10-29 — GitHub distribution verification
+
+- Version current source as 1.4.19+2059 and build ARM64 debug/release APKs.
+- Verify prior-delivery signing compatibility, signature, 16 KiB alignment,
+  non-debuggable metadata and APK SHA-256 for GitHub Release distribution.
+- Verify clean Dart formatting/analysis, 673 Flutter, 128 backend and 38 Pi tests,
+  Python lint/shell syntax and the Android unit-test task (25 cached cases).
+- Preserve existing feature work, local credentials, older APKs and Stitch sources.
+- [Exact verification and download links](GITHUB_DELIVERY_2026-10-29.md).
+
+## 2026-10-22 — Complete project/GPT study guide
+
+- Delivered self-contained Markdown/Word guides with 35 sections, actual stack/
+  architecture/models/flows, dated evidence, setup, presentation scripts and
+  32 viva questions/answers. Word has semantic headings and 12 native tables;
+  all body word tokens match Markdown, ZIP/XML/import checks pass.
+- Verified the actual 80/601-class phone model hashes and label counts. Corrected
+  unsupported completed fine-tuning wording in the older Markdown brief and
+  labelled its old Word export historical. Included an honest contribution
+  statement and a clearly proposed genuine training/evaluation workflow.
+- Application/backend/Pi/model source and 31 Stitch references preserved. No
+  new training, provider call, APK or device operation. [Guide](../deliverables/AI_Blind_Assistant_Complete_GPT_Guide.md)
+  and [exact document validation](GPT_GUIDE_VERIFICATION_2026-10-22.md).
+
+## 2026-10-22 — Restored reflashed Pi and paired Pixel (Module 76)
+
+- Restored the missing runtime/service/finalized model on the actual Pi 3B using
+  the existing installer. All model hashes, 19 deployed modules and actual NCNN
+  warm-up pass; OV5647 processes frames with zero service restarts.
+- Enabled the existing service/Avahi/Wi-Fi startup path and current hotspot
+  profile auto-connect. Pixel enrollment/authentication/settings sync reaches
+  Running, Camera Active and Model Ready through the direct phone hotspot link.
+- 38 Pi tests pass in 3.57 s; Ruff and shell syntax pass. Retained the existing
+  1.4.18 APK and all application/backend/Pi source and Stitch references.
+- Owner confirms audible phone test and actual object announcements. Documented
+  active undervoltage/throttling on laptop USB; available 5 V / 3 A charger remains
+  untested. [Exact evidence](PIXEL_PI_RESTORE_2026-10-22.md).
+
+## 2026-10-21 — Verified Vision AI listening reliability (Module 75)
+
+- Recover rejected echo wakes and failed resumes; serialize callbacks, coalesce
+  starts/recovery, bound retries and cancel stale background/stop/dispose work.
+- Preserve native paused decoder state; allow one second of command trailing
+  silence. Reject missing/negated speech and repair whole words conservatively.
+- Emit a bounded local ready tone/vibration after successful command resume;
+  provide accessible guidance and Restart voice listening on error.
+- 673 Flutter/25 native cases, clean analysis/10-file format, debug/release builds
+  and matching-signer/alignment/package/installed-hash checks pass. Install 1.4.18
+  in place on Pixel; owner confirms repeated commands and readiness cue work.
+- Preserve offline models, Smart AI providers/keys/consent, Pi/backend, prior
+  artifacts and all 31 Stitch hashes. [Exact evidence/rehearsal](VISION_AI_RELIABILITY_2026-10-21.md).
+
+## 2026-10-21 — Verified fresh-phone Smart AI circle consistency (Module 74)
+
+- Keep the circle on fresh/unconfigured phones with Set up Smart AI, accurate
+  local guidance and disabled cloud questions until personal key/consent setup.
+- Allow local commands, spoken setup help and cue testing before cloud setup;
+  avoid initializing the cloud client/Smart AI recorder in that state.
+- Restore saved Gemini/laptop modes and keep an explicit alternative. Preserve
+  circle/drafts on setup save/key removal. Correct key-removal feedback.
+- 652 Flutter/89 focused cases pass; analysis/format clean and debug build passes.
+  [Exact build/device results and limits](SMART_AI_FRESH_PHONE_2026-10-21.md).
+
+Final 1.4.17/code 4057 debug/release builds pass (9.8/24.2 s). Matching-signer/
+alignment/non-debuggable/package/delivery checks pass; installed Pixel bytes match
+and its first-install time is retained. Cold MainActivity launch succeeds in
+217 ms / 220 ms wait; later lock does not invalidate that recorded launch. The
+owner confirms the large circle and Set up Smart AI button now appear. UI mismatch
+resolved; next action is personal Groq key/consent setup on Pixel. No paid test.
+
+## 2026-10-21 — Owner-directed Pixel 9 Pro installation
+
+Installed the unchanged verified 1.4.16/code 4056 release-mode APK on the owner's
+new Pixel 9 Pro. Fresh installed bytes/version/non-debuggable flags match, later
+MainActivity focus/process checks pass with zero fatal markers. Initial launch
+reached permission UI; physical voice/audio acceptance remains open. No rebuild,
+source change, key transfer or provider probe. [Evidence](VISION_AI_COMMANDS_2026-10-21.md#owner-directed-pixel-9-pro-installation--2026-10-21).
+
+## 2026-10-21 — Verified Vision AI command feedback (Module 73)
+
+- Speak Pi discovery/connection progress and actual not-found/failure/selection/
+  already-connected/success results; announce Mobile camera preparation and only
+  report startup success when detection is active. Check wearable control phases.
+- Accept direct local Smart AI commands while idle/paused and after capture;
+  retain exclusive button recording and restore saved global listening on exit.
+- Synchronize command context with visible/restored routes, scope short verbs,
+  gate manual commands, clear covered pages on Home and preserve reader position.
+- Add bounded polite navigation, singular setting/about page and Listen Vision AI
+  wake/echo support. Update visible/spoken/semantic guidance and preserve new local
+  feedback when Smart AI releases shared speech.
+- 646 Flutter/22 native app passes, clean analysis/format, ARM64 1.4.16 debug and
+  release builds and signed/aligned non-debuggable artifact verified. [Report](VISION_AI_COMMANDS_2026-10-21.md).
+
+## 2026-10-21 — Module 72 Smart AI ready vibration and chime APK
+
+- Replaced Smart AI's vibration-only adapter with an isolated native ready cue:
+  220 ms accessibility pulse and 160 ms local prompt tone after native capture
+  starts. No shared Vision AI or provider/language/recording-policy change.
+- Added independent output fallback, foreground/cancel/submit/lifecycle cleanup,
+  generation-safe 300 ms resource release and 750 ms bridge deadlines. Cue
+  failures keep recording usable with labelled guidance. Updated circle/help
+  and Test listening vibration and sound; its test is local with no recording/API.
+- Verified 615 Flutter/21 native app cases, clean analysis (3.0 s), nine-file
+  formatting zero changes, ARM64 1.4.15/code 4055 debug/release 19.3/31.8 s,
+  matching-phone signature, non-debuggable package metadata, 16 KiB alignment
+  and copied APK bytes. All 31 Stitch/94 protected source hashes preserved.
+  Owner chose APK delivery/later physical testing; no install or haptic/speaker
+  acceptance claim. [Exact evidence](SMART_AI_READY_CUE_2026-10-21.md).
+
+## 2026-10-20 — Module 71 Smart AI bilingual circle (software verified)
+
+- Added a separate per-turn English/Urdu instruction after the unchanged exact
+  system prompt so conversation history cannot lock the reply language.
+- Added a large one-second hold-to-talk circle with recording-start haptic,
+  release-to-send, tap pause/resume and hold-to-interrupt. Named buttons,
+  semantic activation and keyboard controls remain available; haptic respects
+  the saved setting. Pause/resume is local and may repeat the last spoken word.
+- Exact recorded goodbye Smart AI deletes its transcribed clip and restores
+  Smart AI audio/local ownership before returning Home, without an LLM call.
+  No Vision AI implementation or always-on listener change.
+- Verified 591 Flutter tests, clean analysis, 17-file formatting, ARM64
+  debug/release 14.5/23.7 s, signed/aligned 1.4.13/code 4053 installation,
+  matching installed bytes, non-debuggable flags, retained data timestamp and
+  cold launch 1114 ms. New physical interaction acceptance remains pending.
+  [Results and inventory](SMART_AI_CIRCLE_2026-10-20.md).
+
+## 2026-10-20 — Module 70 Groq and Urdu speech follow-up
+
+- Implemented the owner's explicit Groq-only speech/answer selection after
+  AgentRouter client-policy rejection. Persist encrypted provider choice, reuse
+  saved keys with fresh recipient consent, retain legacy selection and reject
+  unknown providers. Groq mode uses no AgentRouter endpoint/key. Exact original
+  system prompt and offline Vision AI remain unchanged.
+- Added bounded safe client-denial parsing and separate HTTP request/credit/size/
+  timeout recovery; removed misleading shorter-input advice for every HTTP 400.
+  No completion was sent to AgentRouter for diagnostic probes.
+- Added isolated Smart AI offline Urdu/English voice selection with serialized
+  cancellation and English restoration, plus Read last answer aloud with no API
+  call. Urdu pack is installed. Owner confirms Urdu STT/reasoning on 1.4.11;
+  owner confirms final 1.4.12 Urdu speech/replay both work. Local capture/cancel,
+  background/resume and settings reentry also pass without uploads.
+- Verified 571 Flutter tests (real Python simulator), clean analysis, 25-file
+  format check, 15 post-style targeted passes; prior 13 native app passes for
+  unchanged native repair. ARM64 debug/release 9.2/22.9 s; matching-signer
+  1.4.12/code 4052 installed, bytes/non-debuggable flags/first-install time
+  verified, cold launch Status ok/1030 ms (wait 1068 ms). Preserved 31 Stitch
+  hashes and existing dirty work. No commit/push or source signing/version edit.
+  [Exact verification](SMART_AI_CLOUD_AUDIO_2026-10-19.md).
+
+## 2026-10-19 — Module 70 recorder follow-up (bounded verification)
+
+- Added a Smart AI private-cache lookup on the existing Android recorder channel
+  and reacquisition of audio ownership immediately before capture. Existing
+  recorder operations and Vision AI recognition/kernel remain unchanged.
+- Verified 548 Flutter/13 native app tests, clean analysis, 1.4.9 debug/release
+  builds (15.1/26.1 s) and matching-signer data-preserving installation. Installed
+  bytes/non-debuggable flags/first-install time and cold launch 1610 ms pass.
+- Physically verified Start → Recording → Cancel without an upload; both supplied
+  keys save through the obscured consent form into Keystore. No embedded secret
+  or paid diagnostic probe. Live provider/model/answer/latency remain pending,
+  with acceptance limited to one short AgentRouter turn. Historical initial
+  software evidence and subsequent microphone failure are retained in
+  [the verification report](SMART_AI_CLOUD_AUDIO_2026-10-19.md).
+
+## 2026-10-19 — Module 70 Smart AI Groq/AgentRouter audio
+
+- Added isolated opt-in Smart AI recording → Groq whisper-large-v3 → AgentRouter
+  deepseek-v4-flash with exact owner prompt → phone-local TTS. Reused existing
+  16 kHz mono AAC/M4A/native audio ownership and secure-storage mechanisms.
+- Added separate personal-key consent/Keystore configuration, sequential turn
+  reservation, bounded async HTTPS, safe errors/cancel/deadlines and stale-result
+  guards. Delete local clips after STT/failure; preserve deterministic controls,
+  no cloud tools, and no automatic retry/host/model substitution.
+- Added 49 cases: full 547 Flutter pass with real Python simulator; clean analysis,
+  ARM64 debug/release builds 22.3/30.8 s. Existing fixture assertions remain.
+- Installed release-mode 1.4.8/code 4048 with matching phone signer, verified
+  installed bytes, non-debuggable flags, retained first-install time, cold launch
+  Status ok/1308 ms and zero current-process fatal markers. No Vision AI/kernel/
+  shared session/native/backend/model/Pi changes. Live key/model/voice/latency
+  acceptance remains pending. [Exact evidence](SMART_AI_CLOUD_AUDIO_2026-10-19.md).
+
+## 2026-10-19 — Module 69 phone hotspot and personal Gemini
+
+- Deployed the missing Pi service/runtime/finalized checksum-verified NCNN model
+  on fresh aarch64 Pi OS; actual OV5647/model warm-up, hotspot NSD/enrollment/
+  authentication/settings/Running and live phone telemetry pass. Saved trust
+  survives an app update/reconnect. Owner confirms clear phone audio test.
+- Added disclosed opt-in personal Gemini with separate Keystore key storage,
+  fixed HTTPS text-only transport, local speech/TTS, bounded errors/cancellation
+  and no model tools. Removed the stale laptop-IP/Wi-Fi Direct preset and restore
+  saved endpoints. No live-key acceptance is implied.
+- Corrected a physically observed false TTS timeout warning; final phone audio
+  test completes without warning. Added 30 Gemini cases and two slow/missing
+  speech-completion regressions. All 498 Flutter/128 backend/38 Pi/13 native app
+  tests pass; analysis/Ruff/formatting and ARM64 debug/release builds pass.
+- Installed release-mode 1.4.7/code 4047 with matching phone signer, verified bytes,
+  non-debuggable flags, retained first-install time and successful cold launch.
+  Preserved all 31 Stitch hashes and unrelated workspace edits.
+- Deployed the measured Pi capture/thread profile and local aggregate timing;
+  corrected history-only power flags being reported as current faults. Five
+  power vectors and three real cross-stack cases pass. Real camera timing is
+  recorded; the owner confirms object speech but still rejects speed. A 5 V/2 A
+  adapter still reports active under-voltage/600 MHz; performance remains open.
+- Verified phone/laptop hotspot pairing and an actual typed Ollama reply.
+  Final direct-history disclosure fix passes 118 assistant cases/clean analysis;
+  debug/release rebuild and data-preserving phone update pass. Recorded remaining
+  recovery/offline/TalkBack/fallback and live Gemini gates.
+  [Exact evidence](HOTSPOT_AND_GEMINI_VERIFICATION_2026-10-19.md).
+
+## 2026-10-16 — Module 68 Smart AI speech repairs
+
+- Owner explicitly approved paired-laptop Whisper with clear disclosure and
+  deletion after processing. Added destination/deletion wording before Speak,
+  updated specification/agent/architecture privacy boundaries and resolved
+  ISSUE-075's scope conflict. A new widget test covers disclosure and three
+  server cases verify cleanup after success, unclear speech and duration limit.
+  Follow-up: 128 backend/466 full Flutter and 88 focused assistant tests pass;
+  clean analysis/formatting, debug and signed release 1.4.6/code 4046 builds,
+  signature/non-debuggable package checks. No Android device is attached;
+  phone install remains pending. Build-time flags preserve source version files.
+
+- Verified laptop Whisper medium locally and selected it as the accuracy-first
+  default; model preparation/sample configuration match. Fixed ignored language
+  configuration, removed the assistant-biased prompt, made decoding deterministic
+  and rejected unclear/repetitive whole utterances before routing.
+- Fixed shared-speaker suppression before manual capture, temporary-clip cleanup,
+  background/disposal cancellation and HTTP 422/413 speech recovery.
+- Increased only the Smart AI Vosk conversation pause allowance.
+- Added 17 backend and six Flutter regressions. All 125 backend/465 Flutter/13
+  native app tests pass; analysis/formatting and ARM64 debug build pass. Restarted
+  only the existing laptop assistant service and verified its health.
+- Recorded remaining synthetic/physical accuracy limits and the existing
+  manual-audio transport/specification conflict. No phone installation, new cloud
+  processing, unrelated source edit or Stitch change.
+- [Exact evidence and file inventory](SMART_AI_SPEECH_VERIFICATION_2026-10-16.md).
+
+## 2026-10-15 — Narrated demo video
+
+- Exported a 170-second 1080p native-app walkthrough with local English
+  narration, visible/SRT captions, chapters, editable source and a poster.
+- Captured synthetic Mobile Detecting, actual on-device OCR into six reading
+  lines, reader controls and a successful local battery-status result; labelled
+  optional Pi/laptop interfaces and the unavailable emulator speech engine.
+- Added automatic cursor/control hit-testing and turquoise active borders;
+  30 targets pass geometry/pixel checks and all 37 caption cues fit and align.
+- Verified complete MP4 decoding, media duration/codecs, Python formatting/Ruff
+  and all 31 unchanged Stitch hashes. Kept production code, phone pairing,
+  existing workspace edits and physical acceptance gates intact.
+- Recorded emulator TTS setup and document-header layout as ISSUE-072/073.
+
+## 2026-10-15 — Physical phone Smart AI connection
+
+- Verified the existing laptop backend launch service and local Ollama were
+  healthy, with status ok/protocol 1 on localhost and the current private LAN.
+- Corrected the unpaired phone's old connection address to 192.168.10.5:8765,
+  completed the existing owner-code pairing flow and observed reachable status.
+- Verified one harmless synthetic typed Assistant reply on the physical phone;
+  no document/audio/private content was sent, and no secret was logged.
+- Kept release 1.4.5 and all source/build identities; no code change, rebuild,
+  suite rerun or new authentication path. Pairing replaces the emulator token.
+
+## 2026-10-15 — Scanner rescan framing follow-up
+
+- On the later emulator run request, started medium_phone and updated it to
+  the same signed release 1.4.5. Verified installed checksum/non-debuggable
+  flags and startup (715 ms; alive/resumed; zero current-process fatal markers),
+  leaving the release app running; no source/rebuild/test-suite change.
+- Changed voice “scan again” / “restart scanner” to the existing Scan Another
+  Page framing/reset path so the user can aim before explicit capture.
+- Kept unlimited positioning time, existing reader/echo behavior and explicit
+  Scan capture/OCR/temporary-photo cleanup; no automatic capture timer.
+- Updated both synthetic camera regressions; 459 Flutter tests pass, analysis
+  and final format checks are clean, ARM64 debug/release builds pass.
+- Prepared signed release 1.4.5/code 4045 with verified signature, alignment,
+  non-debuggable flags and AOT. Wirelessly updated the authorized TECNO LE6,
+  verified installed hash/preserved first-install time and successful startup
+  (3391 ms; alive/resumed; zero current-process fatal markers).
+- No new dependency or native/backend/Pi change; 31 Stitch sources preserved.
+
+## 2026-10-15 — Module 67 guarded reader voice interruption
+
+- Kept contextual reader commands available during document speech when
+  hands-free is enabled; accepted stable multiword reader proposals through
+  strong intent, echo, session and single-use native candidate checks.
+- Protected current/recent document and spelling output, including printed
+  branded wake phrases, and attached supported Android audio effects before capture.
+- Isolated each shared TTS turn from old completion/cancellation events; fixed
+  competing Read Again feedback, lazy Stop Reading cleanup, spelling ownership
+  and immediate current-line rate changes.
+- Verified 459 Flutter and 13 fresh native app tests, clean analysis/format,
+  ARM64 debug/release builds, release signature/alignment and AOT contracts.
+- Wirelessly updated the authorized TECNO LE6 to non-debuggable release 1.4.4,
+  verified installed SHA-256 and preserved first-install time, and cold-launched
+  successfully (5090 ms; alive/resumed; zero current-process fatal markers).
+- Preserved existing user work, backend/Pi implementations, models, signing
+  identity, historical deliverables and all 31 Stitch sources. Physical
+  user-over-speaker recognition and self-echo acceptance remain open (ISSUE-071).
+
+## 2026-10-15 — Module 66 Scanner and voice-session repairs
+
+- Added native/Dart restart-scanner aliases and made voice rescan capture a
+  new page without command speech canceling the new reader.
+- Required complete explicit exit phrases; removed bare bye/by and substring
+  dismissal in phone/backend routing, preserving focused recognition.
+- Checked saved-laptop reachability when Smart AI opens or returns from pairing;
+  kept local controls independent and retries free of question/draft submission.
+- Verified 404 Flutter, 108 backend and 9 native app tests, clean static/format
+  checks, ARM64 debug/release builds, signature/alignment and installed checksum.
+- Installed non-debuggable release 1.4.3 on the emulator as requested, verified
+  Home → Smart AI, and restarted/rechecked the existing laptop backend.
+- On the owner's subsequent launch request, paired the emulator through the
+  existing owner-code flow, confirmed reachable status and received one
+  synthetic typed reply through local Ollama; left the release app/services running.
+- On later explicit phone authorization, wirelessly installed the same signed
+  release on TECNO LE6/API 30, verified installed checksum/non-debuggable flags
+  and cold launch, and left welcome Continue visible. No previous package,
+  uninstall, data clear, automatic permission grant, re-sign or rebuild.
+- Preserved existing user changes, release signing configuration, immutable
+  deliverables and all 31 Stitch files. Physical acceptance remains open.
+
+## 2026-10-12 — Verified presentation documentation
+
+- Added a complete project/presentation brief and editable Word copy covering
+  concept, functionalities, scope, architecture and Mobile/Pi/OCR/voice flows.
+- Included the owner's Open Images V7 pretrained YOLOv8n household fine-tuning
+  contribution, clearly separating training work from deployment provenance
+  and unsupplied accuracy measurements.
+- Added a 22-slide outline, speaker notes, demonstration script and viva answers.
+- Verified 58 brief links, 25 Word sections, 17 tables, ZIP/XML/read-back and
+  current model hashes; corrected stale general-model hashes in model guides.
+- Preserved application code and all 31 Stitch-related files. Software suites
+  and device acceptance were not rerun or promoted for documentation work.
+
+## 2026-10-09 — Module 65 verified hotspot/phone-output repairs
+
+- Reproduced and repaired heartbeat ordering, offline clock enrollment, exact
+  timestamp HMAC and cross-language numeric canonicalization failures.
+- Added accessible Test Phone Audio, muted-alert guidance and available
+  Disconnect during startup; prevented false settings/start success.
+- Canceled Pi fallback before phone output and stale phone TTS before delayed
+  utterance/microphone-resume work; persisted Pi settings before applying.
+- Scoped mDNS to the service interface, cleaned failed registration and made
+  hotspot service restart non-blocking.
+- Verified 393 Flutter and 33 Pi tests, clean analysis/Ruff/formatting,
+  10,000 numeric vectors, both ARM64 APK builds/signature and emulator launch.
+  Physical hotspot/speaker/native inference gates remain open. No commit/push.
+
+## 2026-10-09 — Module 64 verified audit repairs
+
+- Reproduced and corrected invalid-code/direct laptop pairing, early sensitive
+  backend execution, missing schedule/memory actions, and reminder filtering.
+- Added user/request/tool-bound single-use server confirmation and cancellation.
+- Restricted assistant transport to its selected private endpoint; bounded
+  response time/size, prevented redirects and late/replayed mutations, preserved
+  recent history, and surfaced authentication/read/delete failures.
+- Rejected invalid audio/history/model tool data and verified temporary cleanup.
+- Replaced fabricated battery status with an injected Android adapter; applied
+  speech-rate changes and verified mobile torch state before reporting success.
+- Removed the plaintext SSH-helper password and automatic host-key acceptance.
+- Verified Flutter/backend/Pi suites, fresh native app tests, model smoke/integrity,
+  local Ollama/Whisper smoke and debug/release packaging; exact results and open
+  native/lint/hardware gates: PROJECT_AUDIT_2026-10-09.md. No commit or deployment.
+
+## 2026-10-03 — Module 63 Accessible Control Labels
+
+- Removed duplicate custom/visual action announcements from shared buttons,
+  choices, Scanner and assistant controls while retaining semantic activation.
+- Added contextual names for settings, Back, Help, camera/reader tools,
+  assistant actions, and wearable navigation. Selection and enabled states
+  are exposed separately. The cooldown slider speaks seconds and remains
+  adjustable through accessibility.
+- Added seven meaningful semantic-state/activation cases. Verified 46 targeted
+  tests and 351 full-suite passes with one environment skip; changed-file
+  analysis clean; debug APK built. Physical TalkBack acceptance remains open.
+
+## 2026-10-03 — Module 62 Document Scanner Refinement
+
+- Guarded camera startup, capture, disposal, and retry/rescan transitions;
+  deleted temporary photos before reader playback and on interrupted paths.
+- Fixed camera Y-plane stride handling and made manual torch choices persist
+  for the current camera session.
+- Made Scanner action groups readable at large text sizes and surfaced reader
+  speech failures with a retry path.
+- Added a reviewable Ask AI draft with disclosure and an explicit Send step.
+- Verified changed-file analysis clean, 23 Scanner/domain and 6 assistant-screen
+  targeted tests, 344 full-suite
+  passes with 1 skip, and Android debug APK build. Full analyzer retains two
+  existing assistant unused-import warnings. Physical scanner acceptance
+  remains open.
+
+## 2026-09-28 — Module 61 Wearable Connection Reliability
+
+- Guarded the complete Connect & Start flow and added cancellation during
+  search/connection. Trusted selections and manual address corrections reuse
+  saved credentials with normal authentication.
+- Fixed socket-error/status ordering, rediscovery on each bounded retry,
+  retry cancellation, late socket opening and late command state restoration;
+  bounded hostname lookup and blocked stale/background/wrong-device speech.
+- Put Connect first and manual setup under Connection options. Serialized
+  bounded Android NSD resolves, main-thread callbacks and old-session guards.
+- Added 14 regression tests and extended Python/Flutter end-to-end credential
+  reuse. Final full Flutter suite: 340 passed, 0 failed/skipped; targeted
+  analyzer clean; 16 Pi tests/Ruff/shell syntax pass; debug APK built. Full
+  analyzer retains 2 pre-existing assistant warnings; hardware gates remain.
+- Updated architecture/graph, hotspot guide, decisions, traceability, status,
+  current module and handoff. All 31 Stitch references remain unchanged.
+
+## 2026-09-25 — Module 60 Connected Phone Audio
+
+- Confirmed Pi inference sends compact authenticated alerts for phone speech;
+  ordinary detection telemetry remains silent and Pi speech is fallback after
+  phone disconnect.
+- Made phone TTS failures and timeouts propagate to the wearable warning UI;
+  added explicit audio-path guidance to the Raspberry Pi screen.
+- Added tests for object/direction speech, phone-only targeting, fallback
+  suppression, and platform TTS failure. Verified 325 Flutter tests with 1
+  skipped, 16 Pi tests on sequential rerun, and an Android debug APK.
+
+
+## 2026-09-25 — Module 59 Phone Hotspot Readiness
+
+- Added a project architecture graph and researched owner-phone hotspot guide.
+- Updated Wearable Mode guidance to set up the Pi as a phone-hotspot client and
+  avoid promising a fixed DHCP address.
+- Added a discovery-scoped Android multicast lock and a Pi NetworkManager
+  Wi-Fi-up hook while preserving the Pi service restart limit.
+- Made one-tap Connect discover the current Pi address first; multiple devices
+  require explicit selection before enrollment.
+- Verified Android debug APK, 320 passing Flutter tests with 1 skipped, 16
+  passing Pi tests, Ruff, and shell syntax. Physical phone/Pi acceptance remains
+  open. Full analyzer reports two warnings in concurrent assistant edits.
+
+
 ## 2026-08-20 — Module 57 Exclusive Code-Free Pi Enrollment
 
 - Removed the wearable pairing-code field and Pair Device action. First use is

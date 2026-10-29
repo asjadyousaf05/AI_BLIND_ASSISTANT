@@ -148,6 +148,11 @@ if [ -f "$UNIT_PATH" ]; then
 fi
 install -o root -g root -m 0644 \
   "$SERVICE_DIR/systemd/ai-blind-assistant-pi.service" "$UNIT_PATH"
+if [ -d /etc/NetworkManager/dispatcher.d ]; then
+  install -o root -g root -m 0755 \
+    "$SERVICE_DIR/scripts/hotspot_network_dispatcher.sh" \
+    /etc/NetworkManager/dispatcher.d/90-ai-blind-assistant-hotspot
+fi
 systemctl daemon-reload
 systemctl enable ai-blind-assistant-pi.service
 

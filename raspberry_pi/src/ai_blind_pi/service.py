@@ -19,6 +19,7 @@ from .models import (
     SettingsVersion,
     WearableSettings,
     now_iso,
+    now_ms,
     parse_utc_timestamp,
 )
 from .persistence import StateStore
@@ -45,7 +46,7 @@ class AssistanceEngine:
         feedback: FeedbackPolicy,
         store: StateStore,
         nms_threshold: float = 0.45,
-        frame_stride: int = 2,
+        frame_stride: int = 1,
         max_camera_restarts: int = 3,
     ):
         self.device_id = device_id
@@ -71,9 +72,13 @@ class AssistanceEngine:
         self._inference_task: asyncio.Task[None] | None = None
         self._event_sinks: set[EventSink] = set()
         self._state_lock = asyncio.Lock()
+        self._settings_lock = asyncio.Lock()
         self._phone_connections = 0
         self._started_at = time.monotonic()
         self._closing = False
+        self._processed_frames = 0
+        self._last_inference_ms: int | None = None
+        self._last_frame_age_ms: int | None = None
 
     async def initialize(self) -> None:
         self.model_state = ComponentState.LOADING
@@ -204,6 +209,7 @@ class AssistanceEngine:
         except Exception:
             LOGGER.exception("camera stop failed")
         self._frame_buffer.clear()
+        await self.feedback.stop_local_speech()
         self.camera_state = final_camera_state
         await self.emit("camera_status", self.camera_status_payload())
 
@@ -252,6 +258,7 @@ class AssistanceEngine:
                 seen_frames += 1
                 if seen_frames % self.frame_stride:
                     continue
+                inference_started = time.monotonic()
                 detections = list(
                     await asyncio.to_thread(
                         self.detector.detect,
@@ -260,6 +267,18 @@ class AssistanceEngine:
                         nms_threshold=self.nms_threshold,
                     )
                 )
+                self._last_inference_ms = round((time.monotonic() - inference_started) * 1000)
+                self._last_frame_age_ms = max(0, now_ms() - frame.captured_at_ms)
+                self._processed_frames += 1
+                # Aggregate timing only: never log frames, labels or image data.
+                if self._processed_frames % 30 == 0:
+                    LOGGER.info(
+                        "pipeline timing: processed=%d inference_ms=%d frame_age_ms=%d dropped=%d",
+                        self._processed_frames,
+                        self._last_inference_ms,
+                        self._last_frame_age_ms,
+                        self._frame_buffer.dropped_frames,
+                    )
                 for detection in detections[:20]:
                     payload = detection.as_payload(
                         source_device_id=self.device_id,
@@ -311,19 +330,26 @@ class AssistanceEngine:
 
     async def apply_settings(self, incoming: WearableSettings) -> WearableSettings:
         incoming.validate()
-        ordering = _compare_settings_versions(incoming.version, self.settings.version)
-        if ordering < 0 or (ordering == 0 and incoming.to_payload() != self.settings.to_payload()):
-            raise ProtocolError(
-                "SETTINGS_CONFLICT", "incoming settings are older than device settings"
+        async with self._settings_lock:
+            ordering = _compare_settings_versions(incoming.version, self.settings.version)
+            if ordering < 0 or (
+                ordering == 0 and incoming.to_payload() != self.settings.to_payload()
+            ):
+                raise ProtocolError(
+                    "SETTINGS_CONFLICT", "incoming settings are older than device settings"
+                )
+            if ordering == 0 and incoming.to_payload() == self.settings.to_payload():
+                return self.settings
+            # A rejected disk write must leave the previous live settings
+            # intact, matching the failure reported to the phone.
+            await asyncio.to_thread(
+                self.store.update,
+                lambda state: state.__setitem__("settings", incoming.to_payload()),
             )
-        if ordering == 0 and incoming.to_payload() == self.settings.to_payload():
+            self.settings = incoming
+            if not incoming.speech_enabled:
+                await self.feedback.stop_local_speech()
             return self.settings
-        self.settings = incoming
-        await asyncio.to_thread(
-            self.store.update,
-            lambda state: state.__setitem__("settings", incoming.to_payload()),
-        )
-        return self.settings
 
     async def change_mode(self, mode: str) -> WearableSettings:
         if mode != "object_detection":
@@ -392,6 +418,15 @@ class AssistanceEngine:
             "measuredAt": now_iso(),
         }
 
+    def performance_metrics(self) -> dict[str, int | None]:
+        """Aggregate local diagnostics; protocol v1's strict health schema stays intact."""
+        return {
+            "processedFrames": self._processed_frames,
+            "inferenceTimeMs": self._last_inference_ms,
+            "frameAgeMs": self._last_frame_age_ms,
+            "droppedFrames": self._frame_buffer.dropped_frames,
+        }
+
     def _error_record(self, code: str, technical_message: str) -> dict[str, Any]:
         return {"code": code, "technicalMessage": technical_message, "timestamp": now_iso()}
 
@@ -451,6 +486,8 @@ def _throttle_state() -> tuple[bool | None, bool | None]:
             timeout=1,
         )
         bits = int(completed.stdout.strip().split("=", 1)[1], 16)
-        return bits != 0, bool(bits & ((1 << 0) | (1 << 16)))
+        # Bits 16..19 are sticky history. Current phone health must recover
+        # when power recovers instead of reporting an old fault indefinitely.
+        return bool(bits & 0xF), bool(bits & 1)
     except (OSError, subprocess.SubprocessError, ValueError, IndexError):
         return None, None

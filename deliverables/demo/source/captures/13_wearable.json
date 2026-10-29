@@ -1,0 +1,182 @@
+[
+  {
+    "label": "Raspberry Pi Mode",
+    "bounds": [
+      0,
+      0,
+      720,
+      1600
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Go back from Raspberry Pi Mode",
+    "bounds": [
+      8,
+      56,
+      104,
+      152
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Raspberry Pi Mode",
+    "bounds": [
+      172,
+      78,
+      548,
+      130
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Raspberry Pi Mode icon",
+    "bounds": [
+      264,
+      208,
+      456,
+      400
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Raspberry Cap",
+    "bounds": [
+      48,
+      440,
+      672,
+      504
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Control offline wearable object detection over your local network.",
+    "bounds": [
+      48,
+      520,
+      672,
+      608
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Status: No wearable configured\nNO WEARABLE CONFIGURED",
+    "bounds": [
+      150,
+      640,
+      570,
+      696
+    ],
+    "clickable": false
+  },
+  {
+    "label": "No wearable configured",
+    "bounds": [
+      48,
+      720,
+      672,
+      760
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Connect securely to rpi3-ml.local and start Raspberry Pi object detection",
+    "bounds": [
+      48,
+      800,
+      672,
+      912
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Phone hotspot connection",
+    "bounds": [
+      48,
+      960,
+      567,
+      1012
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Turn on this phone\u2019s hotspot. Once the Pi has joined it, tap Connect & Start Detection. If search cannot find your Pi, use Connection options below.",
+    "bounds": [
+      48,
+      1020,
+      672,
+      1180
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Search the local network for a Raspberry Pi wearable",
+    "bounds": [
+      48,
+      1204,
+      672,
+      1316
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Collapsed",
+    "bounds": [
+      48,
+      1350,
+      672,
+      1392
+    ],
+    "clickable": false
+  },
+  {
+    "label": "Connection options\nHotspot setup and manual local address, Collapsed",
+    "bounds": [
+      48,
+      1350,
+      672,
+      1392
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Home\nTab 1 of 4",
+    "bounds": [
+      0,
+      1392,
+      180,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Modes\nTab 2 of 4",
+    "bounds": [
+      180,
+      1392,
+      360,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Wearable\nTab 3 of 4",
+    "bounds": [
+      360,
+      1392,
+      540,
+      1552
+    ],
+    "clickable": true
+  },
+  {
+    "label": "Settings\nTab 4 of 4",
+    "bounds": [
+      540,
+      1392,
+      720,
+      1552
+    ],
+    "clickable": true
+  }
+]

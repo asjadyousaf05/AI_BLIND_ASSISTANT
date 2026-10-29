@@ -1,0 +1,147 @@
+1
+00:00:00,350 --> 00:00:06,473
+Meet AI Blind Assistant, an Android app that turns object observations and printed text into spoken
+
+2
+00:00:06,473 --> 00:00:06,856
+information.
+
+3
+00:00:07,096 --> 00:00:08,714
+Let's follow a user's journey.
+
+4
+00:00:10,350 --> 00:00:13,888
+From Home, the user opens Mobile Mode or chooses another feature.
+
+5
+00:00:14,128 --> 00:00:18,902
+Large labelled controls expose the assistance status, while TalkBack support and on-demand
+
+6
+00:00:18,902 --> 00:00:21,687
+permissions make the interface easier to explore.
+
+7
+00:00:22,350 --> 00:00:26,650
+Before starting, the user chooses audio, vibration, or both.
+
+8
+00:00:26,890 --> 00:00:32,213
+Detection sensitivity and announcement pacing can be adjusted to reduce distracting repetition.
+
+9
+00:00:32,453 --> 00:00:37,872
+Accessibility options include large text and high contrast. Preferences are saved locally.
+
+10
+00:00:42,350 --> 00:00:45,032
+The user opens Mobile Mode and starts assistance.
+
+11
+00:00:45,272 --> 00:00:51,302
+The bundled object detector runs on the phone. Its alert policy selects relevant object names and
+
+12
+00:00:51,302 --> 00:00:54,317
+relative directions for offline speech and finite vibration.
+
+13
+00:00:54,557 --> 00:01:00,753
+The user can pause, resume, or stop. Visual risk is estimated; this is not exact distance
+
+14
+00:01:00,753 --> 00:01:01,140
+measurement.
+
+15
+00:01:06,350 --> 00:01:12,267
+To read print, the user opens Scan Document from Modes, aims at the page, and chooses Scan when
+
+16
+00:01:12,267 --> 00:01:12,596
+ready.
+
+17
+00:01:12,836 --> 00:01:16,393
+Local text recognition extracts the words for the spoken reader.
+
+18
+00:01:16,633 --> 00:01:21,788
+The demonstration uses synthetic print. Camera images are never sent to an AI provider.
+
+19
+00:01:25,350 --> 00:01:28,551
+After scanning, the reader can speak the document aloud.
+
+20
+00:01:28,791 --> 00:01:34,933
+The user can pause, repeat, move between reading lines, spell words, and change reading speed.
+
+21
+00:01:35,173 --> 00:01:38,949
+Scan Again returns to framing and waits for another explicit scan.
+
+22
+00:01:39,189 --> 00:01:43,864
+Ask AI first creates an editable text draft; sending it is a separate choice.
+
+23
+00:01:47,350 --> 00:01:53,456
+For hands-free operation, the open app supports Hey Vision AI and local commands for navigation,
+
+24
+00:01:53,456 --> 00:01:55,084
+settings, and reader controls.
+
+25
+00:01:55,324 --> 00:01:57,146
+Typed commands offer another route.
+
+26
+00:01:57,386 --> 00:02:02,319
+These approved actions execute on the phone. Say goodbye to end the active command session.
+
+27
+00:02:05,350 --> 00:02:10,111
+The optional wearable uses a Raspberry Pi camera on a private network or phone hotspot.
+
+28
+00:02:10,351 --> 00:02:14,615
+The user discovers the device, establishes trust, and connects to start.
+
+29
+00:02:14,855 --> 00:02:19,959
+The Pi detects locally and sends compact alerts for phone speech. Physical hardware acceptance
+
+30
+00:02:19,959 --> 00:02:20,688
+remains pending.
+
+31
+00:02:21,350 --> 00:02:25,900
+Smart AI adds general questions through an explicitly paired laptop running local Ollama.
+
+32
+00:02:26,140 --> 00:02:30,279
+An owner-enabled Gemini option accepts text only, with local fallback.
+
+33
+00:02:30,519 --> 00:02:36,011
+Pairing is optional: object awareness, document reading, and local app controls remain independent
+
+34
+00:02:36,011 --> 00:02:37,701
+of this conversation service.
+
+35
+00:02:38,350 --> 00:02:43,458
+The journey is simple: open, personalize, detect or read, then pause or stop when finished.
+
+36
+00:02:43,698 --> 00:02:49,041
+AI Blind Assistant supplements a white cane, guide dog, and user judgment. It never guarantees a
+
+37
+00:02:49,041 --> 00:02:49,709
+clear path.

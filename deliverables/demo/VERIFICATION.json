@@ -1,0 +1,14 @@
+{
+  "duration_seconds": 170.0,
+  "resolution": "1920x1080",
+  "fps": "24",
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "audio_sample_rate": 48000,
+  "bytes": 6764129,
+  "sha256": "4c0458df0d57c12c24b2092f8c2650f10e1eadf8fdb81315da3577557a4de62a",
+  "full_decode": "PASS, no error output",
+  "caption_cues": 37,
+  "caption_timing_and_layout": "PASS",
+  "automatic_hover_borders": "PASS, 30 targets hit-tested and pixel-checked"
+}

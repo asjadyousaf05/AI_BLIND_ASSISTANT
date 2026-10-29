@@ -1,6 +1,179 @@
 # Voice and AI Assistant
 
-Last reviewed: 2026-08-20
+## Vision AI reliability — 2026-10-21
+
+ADR-076 retains bundled on-phone English recognition and local deterministic
+controls. Failed resume now surfaces to bounded recovery; stale lifecycle work
+cannot reopen capture, and rejected echo wake restores listening. Successful
+command readiness after wake/feedback requests a brief local tone/vibration.
+Assistant Settings explains turn-taking and provides Restart voice listening on
+failure. Normal controls remain paused during spoken feedback. Smart AI recording,
+keys, provider selection and consent are unchanged. [Verification/demo guide](VISION_AI_RELIABILITY_2026-10-21.md).
+
+## Fresh-phone Smart AI view — 1.4.17
+
+A fresh phone shows the same circle with Set up Smart AI. Save a personal key and
+review provider-specific consent to enable questions. Local commands, spoken setup
+instructions and vibration/chime testing need no cloud account. Recording/send
+remain disabled until setup; no keys transfer from another phone. Already saved
+Gemini/laptop modes are preserved, and Use Gemini or laptop assistant explicitly
+opens that alternative. Removing cloud keys keeps setup guidance rather than
+silently substituting an unrelated unpaired screen. [Evidence](SMART_AI_FRESH_PHONE_2026-10-21.md).
+
+## Direct local controls alongside Smart AI — 1.4.16
+
+Local Vision AI accepts go back/go home/open setting/open about page and polite
+variants directly while the Smart AI foreground screen is idle or paused. Hold
+the circle only for a question; it exclusively owns the microphone during capture.
+Ordinary local speech cannot start a cloud interaction. Command context follows
+the visible route, and local feedback waits for reply cancellation/voice restoration.
+Leaving idle/paused Smart AI preserves the new navigation acknowledgement. Saved
+hands-free preference and all provider/key/language/capture policies remain.
+[ADR-074 and exact evidence](VISION_AI_COMMANDS_2026-10-21.md).
+
+## Listening vibration and sound — version 1.4.15
+
+Hold the Smart AI circle for one second, then wait for the vibration and short
+chime before speaking. The cue occurs after the microphone starts. Lift your
+finger to send. Use Test listening vibration and sound to check both cues without
+recording or using an API. Sound uses the phone's current media volume and route;
+if muted, raise media volume and test again. The app does not change volume or
+DND. Recording remains usable if a cue is unavailable; follow the Listening label
+or named Button controls. Cancel/background/exit stop the bounded cue.
+
+This update changes only Smart AI readiness feedback. Vision AI, language choices,
+reply pause/resume and local goodbye retain their behavior. Owner requested the
+APK for later testing, so actual motor/speaker output remains unverified.
+[Exact evidence](SMART_AI_READY_CUE_2026-10-21.md).
+
+## Smart AI bilingual circle — version 1.4.13
+
+English questions receive English replies; Urdu-script questions receive Urdu
+replies, even when switching within the same conversation. The installed offline
+Urdu/English voices handle speech. Roman Urdu recognition is not inferred from
+this script-based rule.
+
+Hold the large circle for one second. When recording starts it vibrates once if
+vibration is enabled; speak, then lift your finger to send. Tap while an answer
+plays to pause; tap again to resume from its last reported word. Holding again
+interrupts the current turn and begins a new recording. Release during setup
+or cancel a touch to discard without sending. Recording still caps at 30 seconds.
+
+For an alternative, expand Button controls and use Speak/Send recording or
+Pause/Resume answer. TalkBack activates the circle by its normal double-tap;
+Enter/Space also activates it without a timed hold. Existing Cancel and replay
+remain available. Pause/resume/replay never request another answer from an API.
+
+Record “goodbye Smart AI” to return Home and restore the saved local hands-free
+preference. That phrase needs the usual foreground recording/transcription;
+it is not heard in the background or while an answer is playing unless you
+start a new recording. Typed goodbye also works without a provider. Existing
+Vision AI controls remain local and unchanged. [Evidence/physical gate](SMART_AI_CIRCLE_2026-10-20.md).
+
+## Smart AI cloud audio — 2026-10-19/20
+
+Smart AI uses Groq Whisper large v3 for a temporary foreground 16 kHz mono clip,
+then the explicitly selected Groq GPT-OSS 20B for bounded conversation text and
+phone-local speech. This is the owner's choice after AgentRouter custom-client
+rejection. The original AgentRouter/DeepSeek mode remains a manual option; no
+automatic provider fallback is used. Groq selection never calls AgentRouter.
+
+Open Assistant → connection settings → Smart AI cloud audio → Set up personal
+Smart AI keys (or Replace personal Smart AI keys). Select Groq for speech and
+answers, reuse encrypted saved keys or enter a personal Groq key, review the
+speech/text destination/privacy/retention/quotas, select agreement and Use Groq
+for Smart AI. Saving does not make an API call. Provider choice/keys stay in
+separate Keystore storage; no secret is bundled. Legacy settings keep their
+provider; changing provider requires fresh consent and clears conversation.
+
+Speak to Smart AI → speak → Send recording. At 30 seconds it submits; Cancel
+stops work. Typed questions skip STT. Deterministic local controls precede the
+LLM; cloud text never executes tools. Groq uses the owner's exact concise-answer
+prompt, low reasoning effort, no returned reasoning and 512 completion tokens.
+The phone clip is deleted after STT/failure, before reasoning; deletion does not
+delete provider copies. No cloud frame upload, wake recognition or background
+recording. Vision AI/offline assistance remain independent.
+
+Version 1.4.12 selects an installed offline Urdu voice for Urdu script (prefer
+Pakistan, permit India) and English voice for English. It restores en-US after
+completion/cancel/exit before returning audio ownership. Missing voice data gives
+an install/replay message. Read last answer aloud uses retained text locally,
+with no new transcription/LLM request. Roman Urdu and arbitrary multilingual
+speech are outside this detection rule. The target phone's Urdu pack is installed.
+
+Timeouts and safe provider-specific errors never automatically retry. A client
+policy rejection is distinct from key rejection; HTTP 400/422 report request
+compatibility, while 413 alone recommends shorter input. Removing cloud keys
+restores earlier Gemini/laptop view and preserves their credentials/Pi trust.
+This is sequential file-based speech, not full-duplex or guaranteed latency.
+Groq free usage is quota/account limited. [Evidence/setup](SMART_AI_CLOUD_AUDIO_2026-10-19.md).
+
+Last reviewed: 2026-10-20
+
+## Laptop-free Gemini — Module 69
+
+Open Smart AI → Connection → Gemini without a laptop. Create a personal key in
+[Google AI Studio](https://aistudio.google.com/api-keys), enter it in the obscured
+field, review text/history and free-tier data-use disclosure, tick agreement
+and select Use Gemini without laptop. No key should be sent through chat or
+committed to this repository. The app encrypts it through Android Keystore;
+removing it preserves existing Pi/laptop pairing and restores laptop mode.
+The default model is `gemini-3.1-flash-lite`; availability/quotas belong to the
+owner's project. The app reports quota/key/model/network failures without
+pretending the laptop is down. Configuration alone does not verify API access.
+
+Both Speak and hands-free recognize audio on this phone in direct mode. Only
+unmatched conversation text and up to ten recent conversation messages go to
+Google over HTTPS. Replies are text spoken locally, with no cloud tool execution,
+images or raw audio. Background cancels pending requests. Laptop notes/reminders,
+Whisper and offline Ollama still require the optional paired laptop. There is
+no laptop-free offline general language model or automatic Ollama fallback in
+direct mode. Core app controls and Mobile/Pi assistance stay offline.
+
+The [phone hotspot guide](PHONE_HOTSPOT.md) covers laptop and Pi as simultaneous
+clients, separate current DHCP addresses and phone audio. USB is needed only
+for development/installation, not the local hotspot communication itself.
+
+## Smart AI recognition repair — Module 68
+
+See [speech verification](SMART_AI_SPEECH_VERIFICATION_2026-10-16.md) for the
+medium laptop-model default, honored language configuration, deterministic
+unprompted decoding, unclear-speech rejection, capture cleanup and pause timing.
+The existing paired Speak-button branch records for private-laptop Whisper;
+hands-free questions still use bundled phone-local English Vosk. Increasing the
+laptop model does not improve hands-free vocabulary. The owner's explicit
+2026-10-16 approval permits this private-laptop path with disclosure before Speak
+and deletion on both devices after processing/failure; ADR-068's addendum resolves
+ISSUE-075's scope conflict. Audio never reaches Gemini. Synthetic tests still
+include wrong names/nouns, so physical acceptance remains open (ISSUE-074).
+
+## Reader commands during speech — Module 67
+
+With foreground hands-free enabled, document playback opens a contextual
+reader session. Stable multiword proposals can interrupt narration only after
+the reader policy, current/recent spoken-text echo protection, session/context
+checks and a native one-time claim. Other actions retain final recognition.
+No new microphone owner, recording, cloud speech or provider is added.
+Goodbye and background suspension remain effective. See
+[reader verification](READER_VOICE_VERIFICATION_2026-10-15.md) for 459 Flutter/
+13 native passes and the required physical speaker-overlap matrix.
+
+## Module 66 current interaction
+
+Opening Smart AI checks the explicitly saved paired laptop's health/version,
+without sending a question or Scanner draft. The bounded check has its own
+status and does not block offline voice/app controls; Retry checks connectivity
+without replaying text. Returning from Connection settings checks the saved
+endpoint. A healthy endpoint is not proof of authenticated/provider readiness.
+First-time pairing still requires the owner's one-time code.
+
+End an offline command session with a complete “goodbye”/“stop listening”.
+Use “exit Smart AI” to return to offline commands. Bare bye/by/buy and quoted
+or incidental substrings do not dismiss a session. These rules supersede older
+bare-bye descriptions below. Scanner voice rescan/restart returns to framing;
+position the page, then say “scan document” or tap Scan when ready. The owner's
+later positioning request supersedes immediate capture in Module 66.
+See [verification](VOICE_FIXES_2026-10-15.md).
 
 ## Scope and Safety Boundary
 
@@ -60,10 +233,18 @@ foreground hands-free voice
        -> otherwise local Ollama llama3.2:3b
   -> concise Android TTS response
 
-manual press/hold remains available
+manual press/hold outside paired Smart AI
   -> dedicated Android on-device recognizer when installed
   -> otherwise the bundled Vosk model
   -> same deterministic routing and confirmation policy
+
+manual Speak on paired Smart AI
+  -> foreground permission and destination/deletion disclosure
+  -> bounded temporary phone-cache clip (30 seconds/4 MB)
+  -> existing authenticated private-LAN laptop only
+  -> local Whisper medium -> transcript; laptop clip deleted even on failure
+  -> deterministic command matcher or optional text-only Gemini/local Ollama
+  -> phone clip deleted after request completion/failure
 ```
 
 The phone matcher is authoritative for basic app controls. On the Smart AI
@@ -116,23 +297,25 @@ structured JSON response format. The model name is configurable through
 laptop environment and are never packaged in the APK or returned to the phone.
 
 With no Gemini key, optional general-conversation reasoning stays on the laptop
-through Ollama. App-control recognition and execution always stay on the phone.
-The retained Whisper service is not used by the mobile app-control voice path.
+through Ollama. Hands-free/unpaired recognition stays on the phone. Paired Smart
+AI manual speech uses laptop Whisper with deterministic routing before optional
+conversation reasoning; mobile controls still execute through phone controllers.
 
 ## Privacy Matrix
 
 | Data | Phone | Laptop | Gemini when enabled |
 |---|---|---|---|
 | Camera frames/images | transient detection only | never sent | never sent |
-| Raw assistant audio | transient in phone-local AudioRecord/recognizer memory; no app file/upload | never sent by the current mobile voice path | never sent |
-| Transcript/typed text | session memory and deterministic control parsing | unmatched conversation text only; history retention off by default | unmatched conversational requests only |
+| Raw assistant audio | hands-free/unpaired in memory; paired manual uses a bounded temporary cache clip, deleted after request/failure | paired manual only: local Whisper; temporary clip deleted after transcription/failure | never sent |
+| Transcript/typed text | session memory and deterministic control parsing | paired manual transcripts and unmatched conversation text; history retention off by default | unmatched conversational requests only |
 | Pair bearer token | Android Keystore AES-GCM store | token hash/auth record | never sent |
 | Settings/tool state | local settings/controllers | local deterministic wording | never sent |
 
 `PERSIST_CONVERSATION_HISTORY=false` is the default. Notes, reminders, or other
 explicit save actions remain deliberate local backend writes. The backend
-stores no audio file and logs no audio bytes, bearer token, API key, query text,
-or camera content.
+retains no audio after processing: its temporary transcription file is removed
+before query routing, including errors. It logs no audio bytes, bearer token,
+API key, query text or camera content.
 
 ## Optional General-Conversation Backend
 
@@ -143,7 +326,7 @@ Raspberry Pi Mode. Install it only if general AI conversation is wanted.
 cd /Users/mm/AI_BLIND_ASSISTANT/laptop_backend
 uv venv --python 3.11 .venv
 uv pip install --python .venv/bin/python -e '.[dev]'
-.venv/bin/python scripts/prepare_whisper_model.py --model base
+.venv/bin/python scripts/prepare_whisper_model.py --model medium
 ollama pull llama3.2:3b
 ollama serve
 ```
@@ -163,11 +346,11 @@ assistants while respecting this app's narrower Android boundary:
    “confirm”/“yes” or “cancel”/“no”.
 6. Reply: Vision AI speaks a short, real result, clears buffered wake/TTS audio,
    and resumes the current contextual command grammar. “Goodbye” ends the
-   offline session; Smart AI “bye” returns to that active offline session.
+   offline session; “exit Smart AI” returns to that active offline session.
 
 This mirrors Siri's documented wake-phrase-plus-request pattern and Voice
 Access's spoken-command/automatic-listening loop. A distinct phrase and paused
-recognition during the assistant's own TTS reduce false activation, consistent
+recognition during short assistant feedback reduce false activation, consistent
 with professional wake-word guidance. Unlike a system assistant, this release
 is deliberately bounded to the visible, unlocked foreground app.
 
@@ -210,7 +393,7 @@ private network; do not port-forward or expose port 8765 to the internet.
   grammar, then keeps a focused contextual grammar active until “goodbye”.
   Smart AI temporarily changes to the default conversation graph.
 - Say “Open Smart AI” or “Start Smart AI” to enter paired conversation. Known
-  app controls remain local. Say “bye”/“by” to leave Smart AI and resume the
+  app controls remain local. Say “exit Smart AI” to leave Smart AI and resume the
   active offline command listener. Say “goodbye” again to end that session.
 - Confirmation is voice-operable: say “confirm”/“yes” or “cancel”/“no”.
 - The app keeps the screen awake while foregrounded. Backgrounding or locking
